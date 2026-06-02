@@ -73,7 +73,7 @@
         const [showPwdModal, setShowPwdModal] = useState(false);
 
         const [dbData, setDbData] = useState({
-          Users: [], Announcements: [], ShopItems: [], PendingItems: [], Emotions: [], HallOfFame: [], Tasks: []
+          Users: [], Announcements: [], ShopItems: [], PendingItems: [], Emotions: [], HallOfFame: [], Tasks: [], Jobs: []
         });
 
         const [loginName, setLoginName] = useState('');
@@ -91,7 +91,7 @@
             const res = await fetch(SCRIPT_URL);
             const data = await res.json();
             
-            const requiredSheets = ['Users', 'Announcements', 'ShopItems', 'PendingItems', 'Emotions', 'HallOfFame', 'Tasks'];
+            const requiredSheets = ['Users', 'Announcements', 'ShopItems', 'PendingItems', 'Emotions', 'HallOfFame', 'Tasks', 'Jobs'];
             const missingSheets = requiredSheets.filter(sheet => !data[sheet]);
             
             if (missingSheets.length > 0) {
@@ -121,8 +121,10 @@
               equippedItems: safeParseArray(u.equippedItems),
               ownedTitles: safeParseArray(u.ownedTitles),
               intro: safeText(u.intro),
+              faceUrl: safeText(u.faceUrl), 
               imoduId: safeText(u.imoduId), 
-              imoduPwd: safeText(u.imoduPwd) 
+              imoduPwd: safeText(u.imoduPwd),
+              job: safeText(u.job)
             }));
 
             const parsedTasks = (Array.isArray(data.Tasks) ? data.Tasks : []).map(t => ({
@@ -145,7 +147,8 @@
               PendingItems: Array.isArray(data.PendingItems) ? data.PendingItems : [],
               Emotions: parsedEmotions,
               HallOfFame: Array.isArray(data.HallOfFame) ? data.HallOfFame : [],
-              Tasks: parsedTasks
+              Tasks: parsedTasks,
+              Jobs: Array.isArray(data.Jobs) ? data.Jobs : []
             });
           } catch (error) {
             console.error("Data Fetch Error:", error);
@@ -200,7 +203,7 @@
           }
         };
 
-        // 💡 개별 업데이트: 확실한 숫자 변환 추가
+        // 개별 업데이트
         const updateStudentData = (studentId, updates) => {
           const studentToUpdate = dbData.Users.find(u => u.id === studentId);
           if (!studentToUpdate) return;
@@ -232,14 +235,16 @@
             ownedItems: updatedStudent.ownedItems,
             equippedItems: updatedStudent.equippedItems,
             ownedTitles: updatedStudent.ownedTitles,
-            intro: updatedStudent.intro
+            intro: updatedStudent.intro,
+            faceUrl: updatedStudent.faceUrl,
+            job: updatedStudent.job
           };
           if (updates.pwd !== undefined) dataToSync.pwd = updates.pwd;
           
           syncToServer('Users', 'UPDATE', studentId, dataToSync);
         };
 
-        // 💡 일괄 지급 전용 업데이트 (오류 원천 차단 및 순차 전송)
+        // 일괄 지급 업데이트 (순차 전송)
         const batchUpdateStudents = async (studentIds, type, val) => {
           setSyncing(true);
           let newUsers = [...dbData.Users];
@@ -269,7 +274,9 @@
                   ownedItems: updated.ownedItems, 
                   equippedItems: updated.equippedItems,
                   ownedTitles: updated.ownedTitles, 
-                  intro: updated.intro
+                  intro: updated.intro,
+                  faceUrl: updated.faceUrl,
+                  job: updated.job
                 }
               });
             }
@@ -277,7 +284,6 @@
 
           setDbData(prev => ({ ...prev, Users: newUsers }));
 
-          // 구글 서버 트래픽 튕김 방지를 위해 순차적 전송
           for (const payload of updatePayloads) {
             try {
               await fetch(SCRIPT_URL, {
@@ -320,7 +326,6 @@
                 <div className="flex items-center gap-4">
                   {syncing && <span className="animate-spin inline-block text-orange-400">🔄</span>}
                   
-                  {/* 새로고침 버튼 추가 */}
                   <button onClick={fetchData} className="p-2 text-stone-500 hover:text-sky-600 transition" title="새로고침">
                     🔄
                   </button>
@@ -466,7 +471,6 @@
           const val = Number(type === 'money' ? batchMoney : batchExp);
           if (!val || val <= 0) return showToast('올바른 값을 입력하세요.');
 
-          // 💡 버그 수정된 일괄 지급 함수 사용
           const studentIds = students.map(s => s.id);
           batchUpdateStudents(studentIds, type, val);
 
@@ -480,6 +484,7 @@
             { id: 'emotions', label: '마음 일기', icon: '🫧' },
             { id: 'announcements', label: '알림장', icon: '📢' },
             { id: 'halloffame', label: '명예의 전당', icon: '🏆' },
+            { id: 'jobs', label: '직업 관리', icon: '💼' },
             { id: 'approvals', label: `아이템 승인 (${dbData.PendingItems?.length || 0})`, icon: '🎁' },
           ];
 
@@ -514,7 +519,7 @@
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     {students.map(student => (
-                      <StudentManagerCard key={student.id} student={student} updateStudentData={updateStudentData} showToast={showToast} shopItems={dbData.ShopItems} onOpenProfile={() => setSelectedStudentProfile(student)} />
+                      <StudentManagerCard key={student.id} student={student} updateStudentData={updateStudentData} showToast={showToast} shopItems={dbData.ShopItems} jobs={dbData.Jobs} onOpenProfile={() => setSelectedStudentProfile(student)} />
                     ))}
                   </div>
                 </div>
@@ -524,18 +529,20 @@
               {activeTab === 'emotions' && <EmotionBoard currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} updateStudentData={updateStudentData} />}
               {activeTab === 'announcements' && <AnnouncementManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
               {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+              {activeTab === 'jobs' && <JobManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
               {activeTab === 'approvals' && <ApprovalManager dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
 
-              {selectedStudentProfile && <StudentProfileModal student={selectedStudentProfile} shopItems={dbData.ShopItems} onClose={() => setSelectedStudentProfile(null)} />}
+              {selectedStudentProfile && <StudentProfileModal student={selectedStudentProfile} shopItems={dbData.ShopItems} jobs={dbData.Jobs} onClose={() => setSelectedStudentProfile(null)} />}
             </div>
           );
         }
 
-        function StudentManagerCard({ student, updateStudentData, showToast, shopItems, onOpenProfile }) {
+        function StudentManagerCard({ student, updateStudentData, showToast, shopItems, jobs, onOpenProfile }) {
           const [expAmount, setExpAmount] = useState('');
           const [moneyAmount, setMoneyAmount] = useState('');
           const [newTitle, setNewTitle] = useState('');
           const [selectedItemToGive, setSelectedItemToGive] = useState('');
+          const [selectedJob, setSelectedJob] = useState('');
 
           const equippedItems = Array.isArray(student.equippedItems) ? student.equippedItems : [];
           const safeShopItems = Array.isArray(shopItems) ? shopItems : [];
@@ -559,6 +566,16 @@
             setNewTitle('');
           };
 
+          const handleGiveJob = () => {
+            if(!selectedJob) return showToast('직업을 선택하세요.');
+            updateStudentData(student.id, { job: selectedJob });
+            showToast(`${student.name} 학생을 [${selectedJob}] 직업에 배정했습니다!`);
+            setSelectedJob('');
+          };
+
+          const safeJobs = Array.isArray(jobs) ? jobs : [];
+          const currentJob = safeJobs.find(j => j.name === student.job);
+
           return (
             <div className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-stone-100 flex flex-col gap-5">
               <div className="flex justify-between items-center border-b border-stone-50 pb-4">
@@ -579,7 +596,10 @@
                     <div className="flex items-center gap-2 mb-1">
                       <button onClick={onOpenProfile} className="font-black text-xl text-stone-800 hover:text-orange-500 transition-colors">{safeText(student.name)}</button>
                     </div>
-                    <div className="text-xs font-bold text-orange-700 bg-orange-100 px-3 py-1 rounded-full inline-block">{safeText(student.title) || '새싹 파도'}</div>
+                    <div className="flex gap-1 flex-wrap">
+                      <div className="text-xs font-bold text-orange-700 bg-orange-100 px-3 py-1 rounded-full inline-block">{safeText(student.title) || '새싹 파도'}</div>
+                      {currentJob && <div className="text-xs font-bold text-indigo-700 bg-indigo-100 px-3 py-1 rounded-full inline-block">💼 {safeText(currentJob.name)}</div>}
+                    </div>
                   </div>
                 </div>
                 <div className="text-right">
@@ -607,6 +627,13 @@
                     {safeShopItems.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                   <button onClick={handleGiveItem} className="bg-purple-400 hover:bg-purple-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">선물하기</button>
+                </div>
+                <div className="flex gap-2">
+                  <select value={selectedJob} onChange={e => setSelectedJob(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-indigo-300 font-bold outline-none text-stone-800">
+                    <option value="">💼 직업 배정하기...</option>
+                    {safeJobs.map(job => <option key={job.id} value={job.name}>{job.name} (월급: {job.salary}원)</option>)}
+                  </select>
+                  <button onClick={handleGiveJob} className="bg-indigo-400 hover:bg-indigo-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">직업 배정</button>
                 </div>
               </div>
             </div>
@@ -1057,7 +1084,7 @@
                 ))}
               </div>
 
-              {activeTab === 'profile' && <StudentProfile currentUser={currentUser} shopItems={dbData.ShopItems} updateStudentData={updateStudentData} showToast={showToast} onOpenPwdModal={onOpenPwdModal} />}
+              {activeTab === 'profile' && <StudentProfile currentUser={currentUser} shopItems={dbData.ShopItems} jobs={dbData.Jobs} updateStudentData={updateStudentData} showToast={showToast} onOpenPwdModal={onOpenPwdModal} />}
               {activeTab === 'tasks' && <TaskManagerStudent currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
               {activeTab === 'emotions' && <EmotionBoard currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} updateStudentData={updateStudentData} />}
               {activeTab === 'shop' && <Shop currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
@@ -1082,7 +1109,7 @@
           );
         }
 
-        function StudentProfile({ currentUser, shopItems, updateStudentData, showToast, onOpenPwdModal }) {
+        function StudentProfile({ currentUser, shopItems, jobs, updateStudentData, showToast, onOpenPwdModal }) {
           const currentExp = currentUser.exp % EXP_PER_LEVEL;
           const expPercent = (currentExp / EXP_PER_LEVEL) * 100;
 
@@ -1090,6 +1117,8 @@
           const ownedItems = Array.isArray(currentUser.ownedItems) ? currentUser.ownedItems : [];
           const ownedTitles = Array.isArray(currentUser.ownedTitles) ? currentUser.ownedTitles : [];
           const safeShopItems = Array.isArray(shopItems) ? shopItems : [];
+          const safeJobs = Array.isArray(jobs) ? jobs : [];
+          const currentJob = safeJobs.find(j => j.name === currentUser.job);
 
           const [isEditingIntro, setIsEditingIntro] = useState(false);
           const [introText, setIntroText] = useState(currentUser.intro || '');
@@ -1143,7 +1172,10 @@
                 <div className="flex-1 w-full flex flex-col">
                   <div className="flex justify-between items-start mb-4">
                     <div>
-                      {currentUser.title && <span className="bg-orange-100 text-orange-900 text-sm font-black px-4 py-1.5 rounded-full mb-2 inline-block shadow-sm">✨ {safeText(currentUser.title)}</span>}
+                      <div className="flex gap-2 mb-2 flex-wrap">
+                        {currentUser.title && <span className="bg-orange-100 text-orange-900 text-sm font-black px-4 py-1.5 rounded-full inline-block shadow-sm">✨ {safeText(currentUser.title)}</span>}
+                        {currentJob && <span className="bg-indigo-100 text-indigo-900 text-sm font-black px-4 py-1.5 rounded-full inline-block shadow-sm">💼 {safeText(currentJob.name)} (월 {currentJob.salary}원)</span>}
+                      </div>
                       <h2 className="text-3xl font-black text-stone-800 mt-1">{safeText(currentUser.name)}</h2>
                     </div>
                     <div className="flex flex-col items-end gap-2">
@@ -1334,6 +1366,17 @@
           const todayString = new Date().toISOString().split('T')[0];
           const hasPostedToday = emotionsData.some(post => post.studentId === currentUser.id && post.date === todayString);
 
+          // 날짜별 그룹핑 로직
+          const groupedEmotions = emotionsData.reduce((acc, post) => {
+            const date = post.date || todayString;
+            if (!acc[date]) acc[date] = [];
+            acc[date].push(post);
+            return acc;
+          }, {});
+
+          const dateKeys = Object.keys(groupedEmotions).sort((a, b) => new Date(b) - new Date(a));
+          const [selectedDateTab, setSelectedDateTab] = useState(dateKeys.length > 0 ? dateKeys[0] : todayString);
+
           // 오늘의 마음 통계
           const todayEmotions = emotionsData.filter(p => p.date === todayString);
           const emotionSummary = {};
@@ -1397,12 +1440,27 @@
                   <p className="font-bold z-10 text-sky-50">오늘의 소중한 마음을 남겨주어 고마워요.</p>
                 </div>
               )}
+
+              {/* 날짜별 탭 */}
+              {dateKeys.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                  {dateKeys.map(date => (
+                    <button 
+                      key={date} 
+                      onClick={() => setSelectedDateTab(date)}
+                      className={`whitespace-nowrap px-5 py-2.5 rounded-full font-black text-sm transition-all shadow-sm ${selectedDateTab === date ? 'bg-sky-500 text-white' : 'bg-white text-stone-500 hover:bg-sky-50 border border-stone-200'}`}
+                    >
+                      {date === todayString ? '오늘' : date}
+                    </button>
+                  ))}
+                </div>
+              )}
               
               <div className="space-y-5">
-                {emotionsData.length === 0 ? (
-                  <div className="text-center py-16 text-sky-600 bg-white/50 rounded-[2.5rem] font-bold border border-sky-100">아직 등록된 일기가 없어요.</div>
+                {!groupedEmotions[selectedDateTab] || groupedEmotions[selectedDateTab].length === 0 ? (
+                  <div className="text-center py-16 text-sky-600 bg-white/50 rounded-[2.5rem] font-bold border border-sky-100">이 날짜에는 등록된 일기가 없어요.</div>
                 ) : (
-                  emotionsData.map(post => {
+                  groupedEmotions[selectedDateTab].map(post => {
                     const emotionInfo = allEmotions.find(e => e.emoji === post.emotion) || { label: '기분', color: 'bg-stone-100 border-stone-300 text-stone-700' };
                     const postUser = dbData.Users.find(u => u.name === post.studentName);
                     const postIsSecret = post.isSecret === true || String(post.isSecret).toLowerCase() === 'true';
@@ -1471,17 +1529,19 @@
                 </div>
               )}
 
-              {selectedStudentProfile && <StudentProfileModal student={selectedStudentProfile} shopItems={dbData.ShopItems} onClose={() => setSelectedStudentProfile(null)} />}
+              {selectedStudentProfile && <StudentProfileModal student={selectedStudentProfile} shopItems={dbData.ShopItems} jobs={dbData.Jobs} onClose={() => setSelectedStudentProfile(null)} />}
             </div>
           );
         }
 
-        function StudentProfileModal({ student, shopItems, onClose }) {
+        function StudentProfileModal({ student, shopItems, jobs, onClose }) {
           if (!student) return null;
           const currentExp = student.exp % EXP_PER_LEVEL;
           const expPercent = (currentExp / EXP_PER_LEVEL) * 100;
           const equippedItems = Array.isArray(student.equippedItems) ? student.equippedItems : [];
           const safeShopItems = Array.isArray(shopItems) ? shopItems : [];
+          const safeJobs = Array.isArray(jobs) ? jobs : [];
+          const currentJob = safeJobs.find(j => j.name === student.job);
           const equippedIcons = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon).filter(Boolean);
 
           return (
@@ -1507,7 +1567,10 @@
                   </div>
                   
                   <div className="text-center">
-                    {student.title && <span className="bg-orange-100 text-orange-900 text-xs font-black px-4 py-1.5 rounded-full mb-2 inline-block shadow-sm border border-orange-200">✨ {safeText(student.title)}</span>}
+                    <div className="flex gap-2 mb-2 justify-center flex-wrap">
+                      {student.title && <span className="bg-orange-100 text-orange-900 text-xs font-black px-4 py-1.5 rounded-full inline-block shadow-sm border border-orange-200">✨ {safeText(student.title)}</span>}
+                      {currentJob && <span className="bg-indigo-100 text-indigo-900 text-xs font-black px-4 py-1.5 rounded-full inline-block shadow-sm border border-indigo-200">💼 {safeText(currentJob.name)}</span>}
+                    </div>
                     <div className="text-3xl font-black text-stone-800">{safeText(student.name)}</div>
                   </div>
                 </div>
@@ -1745,6 +1808,70 @@
                   </div>
                 </div>
               ))}
+            </div>
+          );
+        }
+
+        function JobManager({ currentUser, dbData, setDbData, syncToServer, showToast }) {
+          const [jobName, setJobName] = useState('');
+          const [jobSalary, setJobSalary] = useState('');
+
+          const handlePost = (e) => {
+            e.preventDefault();
+            if (!jobName || !jobSalary) return;
+            const newJob = { id: Date.now().toString(), name: jobName, salary: Number(jobSalary) };
+            setDbData(prev => ({ ...prev, Jobs: [...(prev.Jobs || []), newJob] }));
+            syncToServer('Jobs', 'INSERT', null, newJob);
+            setJobName(''); setJobSalary('');
+            showToast('새로운 직업이 등록되었습니다! 💼');
+          };
+
+          const executeDelete = (id) => {
+            setDbData(prev => ({ ...prev, Jobs: prev.Jobs.filter(j => j.id !== id) }));
+            syncToServer('Jobs', 'DELETE', id, null);
+            showToast('직업이 삭제되었습니다.');
+          };
+
+          const jobs = Array.isArray(dbData.Jobs) ? dbData.Jobs : [];
+
+          return (
+            <div className="space-y-8">
+              <div className="bg-indigo-100 p-8 rounded-[2.5rem] shadow-sm text-indigo-900 relative overflow-hidden border border-indigo-200">
+                <div className="absolute -right-4 -bottom-4 text-[8rem] opacity-30">💼</div>
+                <h2 className="text-3xl font-black mb-2 relative z-10">직업 관리</h2>
+                <p className="font-bold opacity-90 relative z-10">우리 반 친구들의 멋진 직업과 월급을 설정해주세요!</p>
+              </div>
+
+              <form onSubmit={handlePost} className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-indigo-100 space-y-4">
+                <h3 className="font-black text-lg text-indigo-900">💼 새로운 직업 등록</h3>
+                <div className="flex gap-4">
+                  <input type="text" placeholder="직업 이름 (예: 은행원)" value={jobName} onChange={e=>setJobName(e.target.value)} className="w-2/3 bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800 shadow-inner" required />
+                  <input type="number" placeholder="월급 (예: 500)" value={jobSalary} onChange={e=>setJobSalary(e.target.value)} className="w-1/3 bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800 shadow-inner" required />
+                </div>
+                <button type="submit" className="w-full bg-indigo-500 text-white font-black py-4 rounded-xl shadow-md hover:bg-indigo-600 transition">직업 만들기</button>
+              </form>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {jobs.length === 0 ? (
+                  <div className="col-span-full text-center py-10 text-indigo-400 font-black bg-white/50 border border-indigo-100 rounded-[2rem]">아직 등록된 직업이 없습니다.</div>
+                ) : (
+                  jobs.map(job => (
+                    <div key={job.id} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-indigo-100 flex flex-col justify-between relative overflow-hidden group">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <span className="bg-indigo-100 text-indigo-800 text-xs font-black px-3 py-1 rounded-full">💼 직업</span>
+                          <h4 className="font-black text-xl text-stone-800 mt-2">{safeText(job.name)}</h4>
+                        </div>
+                        <button onClick={() => executeDelete(job.id)} className="text-stone-300 hover:text-rose-500 font-black text-xl bg-rose-50 w-8 h-8 flex items-center justify-center rounded-full transition-colors" title="삭제">✕</button>
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-stone-50">
+                        <span className="text-sm font-bold text-stone-500">월급:</span>
+                        <span className="font-black text-amber-600 ml-2">🪙 {job.salary}원</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           );
         }
