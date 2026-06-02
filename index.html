@@ -1592,16 +1592,16 @@
           );
         }
 
-        // 명예의 전당 (분야별 탭 및 추가 기능)
+        // 💡 새롭게 정리된 명예의 전당 (분야별 탭 완벽 복구 및 적용)
         function HallOfFameManager({ currentUser, dbData, setDbData, syncToServer, showToast }) {
           const records = Array.isArray(dbData.HallOfFame) ? dbData.HallOfFame : [];
           
-          // 기본 카테고리 + 기존 데이터에 있는 카테고리
-          const defaultCategories = ['학습', '운동', '게임'];
+          // 기본 카테고리 + 기존 데이터에 있는 카테고리 (요청하신 분야로 수정)
+          const defaultCategories = ['스포츠', '곱셈', '나눗셈', '가가볼'];
           const existingCategories = [...new Set(records.map(r => r.category))];
-          const allCategories = [...new Set([...defaultCategories, ...existingCategories])];
+          const allCategories = [...new Set([...defaultCategories, ...existingCategories])].filter(Boolean);
           
-          const [activeTab, setActiveTab] = useState(allCategories[0] || '전체');
+          const [activeTab, setActiveTab] = useState(allCategories[0] || '스포츠');
           
           const [categorySelect, setCategorySelect] = useState(allCategories[0] || '');
           const [customCategory, setCustomCategory] = useState('');
@@ -1609,6 +1609,13 @@
           
           const [studentName, setStudentName] = useState('');
           const [description, setDescription] = useState('');
+
+          // 데이터 갱신 시 activeTab이 유효한지 확인
+          useEffect(() => {
+            if (!allCategories.includes(activeTab) && allCategories.length > 0) {
+              setActiveTab(allCategories[0]);
+            }
+          }, [allCategories, activeTab]);
 
           const handlePost = (e) => {
             e.preventDefault();
@@ -1630,6 +1637,7 @@
             showToast('기록이 삭제되었습니다.');
           };
 
+          // 💡 핵심: 현재 선택된 탭(분야)에 해당하는 기록만 필터링
           const filteredRecords = records.filter(r => r.category === activeTab);
 
           return (
@@ -1664,6 +1672,7 @@
                 </form>
               )}
 
+              {/* 💡 분야별 탭 버튼 */}
               {allCategories.length > 0 && (
                 <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
                   {allCategories.map(cat => (
@@ -1679,6 +1688,7 @@
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* 💡 현재 탭에 맞는 기록만 보여줌 */}
                 {filteredRecords.length === 0 ? (
                   <div className="col-span-full text-center py-10 text-amber-700 bg-white/50 border border-amber-100 rounded-[2rem] font-black">이 분야에 아직 등록된 기록이 없습니다.</div>
                 ) : (
@@ -1689,15 +1699,15 @@
                         <div className="flex justify-between items-start mb-4">
                           <div>
                             <span className="bg-amber-200 border border-amber-300 text-amber-900 text-xs font-black px-3 py-1 rounded-full">{safeText(record.category)}</span>
-                            <h4 className="font-black text-2xl text-slate-900 mt-2">{safeText(record.studentName)}</h4>
+                            <h4 className="font-black text-2xl text-stone-900 mt-2">{safeText(record.studentName)}</h4>
                           </div>
                           {currentUser.role === 'teacher' && (
                             <button onClick={() => executeDelete(record.id)} className="text-rose-400 hover:text-rose-600 font-black text-xl bg-rose-50 p-2 rounded-full">✕</button>
                           )}
                         </div>
-                        <p className="text-slate-700 font-bold text-sm leading-relaxed mb-4">{safeText(record.description)}</p>
+                        <p className="text-stone-700 font-bold text-sm leading-relaxed mb-4">{safeText(record.description)}</p>
                       </div>
-                      <div className="text-xs text-slate-500 font-bold text-right border-t border-slate-100 pt-3">{safeText(record.date)} 기록</div>
+                      <div className="text-xs text-stone-500 font-bold text-right border-t border-stone-100 pt-3">{safeText(record.date)} 기록</div>
                     </div>
                   ))
                 )}
