@@ -32,7 +32,6 @@
       // ==========================================
       // 💡 [선생님, 주목!] 아래 주소를 반드시 선생님의 앱스스크립트 주소로 바꿔주세요!
       // ==========================================
-      // 배포 관리 -> '웹 앱' 형태의 주소 (끝이 /exec 로 끝나는 주소)를 복사해서 따옴표 사이에 넣고, 끝에 ?api=true 를 꼭 붙이세요!
       const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzev5JeOhBVHDe1Uy6EIFSEOH_BEP2YTncgLjrQB4kRIWc-hCk3uv0hbrcdoiHjAMIj/exec?api=true'; 
       const EXP_PER_LEVEL = 100;
 
@@ -201,39 +200,79 @@
           }
         };
 
+        // 개별 학생 업데이트 함수 (동기식 상태 계산으로 버그 수정)
         const updateStudentData = (studentId, updates) => {
-          let updatedStudent = null;
-          setDbData(prev => {
-            const newUsers = prev.Users.map(s => {
-              if (s.id === studentId) {
-                updatedStudent = { ...s, ...updates };
-                if (updates.exp !== undefined) {
-                  updatedStudent.level = Math.floor(updates.exp / EXP_PER_LEVEL) + 1;
+          const studentToUpdate = dbData.Users.find(u => u.id === studentId);
+          if (!studentToUpdate) return;
+          
+          const updatedStudent = { ...studentToUpdate, ...updates };
+          if (updates.exp !== undefined) {
+            updatedStudent.level = Math.floor(updatedStudent.exp / EXP_PER_LEVEL) + 1;
+          }
+
+          setDbData(prev => ({
+            ...prev,
+            Users: prev.Users.map(u => u.id === studentId ? updatedStudent : u)
+          }));
+
+          if (currentUser?.id === studentId) {
+            setCurrentUser(updatedStudent);
+          }
+
+          const dataToSync = {
+            exp: updatedStudent.exp,
+            level: updatedStudent.level,
+            money: updatedStudent.money,
+            title: updatedStudent.title,
+            ownedItems: updatedStudent.ownedItems,
+            equippedItems: updatedStudent.equippedItems,
+            ownedTitles: updatedStudent.ownedTitles,
+            intro: updatedStudent.intro,
+            faceUrl: updatedStudent.faceUrl 
+          };
+          if (updates.pwd !== undefined) dataToSync.pwd = updates.pwd;
+          
+          syncToServer('Users', 'UPDATE', studentId, dataToSync);
+        };
+
+        // 💡 일괄 지급 및 다수 업데이트를 위한 순차 전송 함수 (구글 서버 과부하 방지)
+        const batchUpdateStudents = async (studentIds, type, val) => {
+          setSyncing(true);
+          let newUsers = [...dbData.Users];
+          const updatePayloads = [];
+
+          studentIds.forEach(id => {
+            const student = newUsers.find(u => u.id === id);
+            if (student) {
+              const updated = { ...student, [type]: Number(student[type]) + val };
+              if (type === 'exp') updated.level = Math.floor(updated.exp / EXP_PER_LEVEL) + 1;
+              newUsers = newUsers.map(u => u.id === id ? updated : u);
+
+              updatePayloads.push({
+                id: id,
+                data: {
+                  exp: updated.exp, level: updated.level, money: updated.money, title: updated.title,
+                  ownedItems: updated.ownedItems, equippedItems: updated.equippedItems,
+                  ownedTitles: updated.ownedTitles, intro: updated.intro, faceUrl: updated.faceUrl
                 }
-                if (currentUser && currentUser.id === studentId) setCurrentUser(updatedStudent);
-                return updatedStudent;
-              }
-              return s;
-            });
-            return { ...prev, Users: newUsers };
+              });
+            }
           });
 
-          if (updatedStudent) {
-            const dataToSync = {
-              exp: updatedStudent.exp,
-              level: updatedStudent.level,
-              money: updatedStudent.money,
-              title: updatedStudent.title,
-              ownedItems: updatedStudent.ownedItems,
-              equippedItems: updatedStudent.equippedItems,
-              ownedTitles: updatedStudent.ownedTitles,
-              intro: updatedStudent.intro,
-              faceUrl: updatedStudent.faceUrl 
-            };
-            if (updates.pwd !== undefined) dataToSync.pwd = updates.pwd;
-            
-            syncToServer('Users', 'UPDATE', studentId, dataToSync);
+          setDbData(prev => ({ ...prev, Users: newUsers }));
+
+          // 구글 서버 트래픽 방어를 위해 순차적으로 전송
+          for (const payload of updatePayloads) {
+            try {
+              await fetch(SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ sheetName: 'Users', action: 'UPDATE', id: payload.id, data: payload.data })
+              });
+            } catch(e) { console.error(e); }
           }
+          setSyncing(false);
+          showToast(`전체 학생에게 ${type === 'money' ? '용돈' : '경험치'} 지급이 완료되었습니다!`);
         };
 
         if (loading) {
@@ -279,7 +318,7 @@
 
             <main className="max-w-5xl mx-auto p-4 mt-4">
               {currentUser.role === 'teacher' ? (
-                <TeacherDashboard currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />
+                <TeacherDashboard currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} batchUpdateStudents={batchUpdateStudents} />
               ) : (
                 <StudentDashboard currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} onOpenPwdModal={() => setShowPwdModal(true)} />
               )}
@@ -393,7 +432,7 @@
         );
       }
 
-      function TeacherDashboard({ currentUser, dbData, setDbData, updateStudentData, syncToServer, showToast }) {
+      function TeacherDashboard({ currentUser, dbData, setDbData, updateStudentData, syncToServer, showToast, batchUpdateStudents }) {
         const [activeTab, setActiveTab] = useState('students');
         const [batchMoney, setBatchMoney] = useState('');
         const [batchExp, setBatchExp] = useState('');
@@ -402,1281 +441,1278 @@
         const students = dbData.Users.filter(u => u.role === 'student');
 
         const handleBatchReward = (type) => {
-          if (type === 'money') {
-            const val = Number(batchMoney);
-            if (!val || val <= 0) return showToast('올바른 금액을 입력하세요.');
-            students.forEach(s => updateStudentData(s.id, { money: Number(s.money) + val }));
-            setBatchMoney('');
-            showToast(`학급 전체에게 ${val}원이 지급되었습니다! 💰`);
-          } else if (type === 'exp') {
-            const val = Number(batchExp);
-            if (!val || val <= 0) return showToast('올바른 경험치를 입력하세요.');
-            students.forEach(s => updateStudentData(s.id, { exp: Number(s.exp) + val }));
-            setBatchExp('');
-            showToast(`학급 전체에게 경험치 ${val}이 지급되었습니다! ⭐`);
-          }
+          const val = Number(type === 'money' ? batchMoney : batchExp);
+          if (!val || val <= 0) return showToast('올바른 값을 입력하세요.');
+
+          // 💡 버그 수정된 일괄 지급 함수 사용
+          const studentIds = students.map(s => s.id);
+          batchUpdateStudents(studentIds, type, val);
+
+          if (type === 'money') setBatchMoney('');
+          else setBatchExp('');
+          showToast(`요청이 전송되었습니다. 잠시 후 동기화됩니다.`);
         };
 
         const tabs = [
-          { id: 'students', label: '학급 관리', icon: '🌱' },
-          { id: 'tasks', label: '할 일', icon: '📝' },
-          { id: 'emotions', label: '마음 일기', icon: '🫧' },
-          { id: 'announcements', label: '알림장', icon: '📢' },
-          { id: 'halloffame', label: '명예의 전당', icon: '🏆' },
-          { id: 'approvals', label: `아이템 승인 (${dbData.PendingItems?.length || 0})`, icon: '🎁' },
-        ];
+            { id: 'students', label: '학급 관리', icon: '🌱' },
+            { id: 'tasks', label: '할 일', icon: '📝' },
+            { id: 'emotions', label: '마음 일기', icon: '🫧' },
+            { id: 'announcements', label: '알림장', icon: '📢' },
+            { id: 'halloffame', label: '명예의 전당', icon: '🏆' },
+            { id: 'approvals', label: `아이템 승인 (${dbData.PendingItems?.length || 0})`, icon: '🎁' },
+          ];
 
-        return (
-          <div className="space-y-6">
-            <div className="flex bg-white/80 backdrop-blur-md rounded-3xl shadow-sm p-2 gap-2 overflow-x-auto border border-orange-100 custom-scrollbar">
-              {tabs.map(tab => (
-                <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 min-w-[110px] flex items-center justify-center gap-2 py-3 px-4 rounded-2xl font-bold transition-all ${activeTab === tab.id ? 'bg-orange-400 text-white shadow-md' : 'text-stone-600 hover:bg-orange-50'}`}>
-                  <span className="text-xl">{tab.icon}</span>
-                  <span className="whitespace-nowrap">{tab.label}</span>
-                </button>
-              ))}
-            </div>
+          return (
+            <div className="space-y-6">
+              <div className="flex bg-white/80 backdrop-blur-md rounded-3xl shadow-sm p-2 gap-2 overflow-x-auto border border-orange-100 custom-scrollbar">
+                {tabs.map(tab => (
+                  <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 min-w-[110px] flex items-center justify-center gap-2 py-3 px-4 rounded-2xl font-bold transition-all ${activeTab === tab.id ? 'bg-orange-400 text-white shadow-md' : 'text-stone-600 hover:bg-orange-50'}`}>
+                    <span className="text-xl">{tab.icon}</span>
+                    <span className="whitespace-nowrap">{tab.label}</span>
+                  </button>
+                ))}
+              </div>
 
-            {activeTab === 'students' && (
-              <div className="space-y-6">
-                <div className="bg-gradient-to-r from-orange-100 to-amber-100 p-6 rounded-[2rem] shadow-sm border border-white flex flex-col md:flex-row gap-4 justify-between md:items-center">
-                  <div>
-                    <h3 className="font-black text-orange-900 text-xl flex items-center gap-2">🎁 학급 전체 선물하기</h3>
-                    <p className="text-orange-800 mt-1 font-bold">우리 반 모두에게 용돈과 경험치를 주세요!</p>
-                  </div>
-                  <div className="flex flex-col gap-3 w-full md:w-auto">
-                    <div className="flex gap-2">
-                      <input type="number" placeholder="용돈 입력" value={batchMoney} onChange={e => setBatchMoney(e.target.value)} className="w-full md:w-32 bg-white/95 border-none rounded-xl px-4 py-3 font-bold focus:ring-2 focus:ring-orange-400 text-stone-800 shadow-inner" />
-                      <button onClick={() => handleBatchReward('money')} className="bg-amber-400 hover:bg-amber-500 text-white font-black px-5 py-3 rounded-xl whitespace-nowrap shadow-md transition">💰 일괄 지급</button>
+              {activeTab === 'students' && (
+                <div className="space-y-6">
+                  <div className="bg-gradient-to-r from-orange-100 to-amber-100 p-6 rounded-[2rem] shadow-sm border border-white flex flex-col md:flex-row gap-4 justify-between md:items-center">
+                    <div>
+                      <h3 className="font-black text-orange-900 text-xl flex items-center gap-2">🎁 학급 전체 선물하기</h3>
+                      <p className="text-orange-800 mt-1 font-bold">우리 반 모두에게 용돈과 경험치를 주세요!</p>
                     </div>
-                    <div className="flex gap-2">
-                      <input type="number" placeholder="경험치 입력" value={batchExp} onChange={e => setBatchExp(e.target.value)} className="w-full md:w-32 bg-white/95 border-none rounded-xl px-4 py-3 font-bold focus:ring-2 focus:ring-orange-400 text-stone-800 shadow-inner" />
-                      <button onClick={() => handleBatchReward('exp')} className="bg-blue-400 hover:bg-blue-500 text-white font-black px-5 py-3 rounded-xl whitespace-nowrap shadow-md transition">⭐ 일괄 지급</button>
+                    <div className="flex flex-col gap-3 w-full md:w-auto">
+                      <div className="flex gap-2">
+                        <input type="number" placeholder="용돈 입력" value={batchMoney} onChange={e => setBatchMoney(e.target.value)} className="w-full md:w-32 bg-white/95 border-none rounded-xl px-4 py-3 font-bold focus:ring-2 focus:ring-orange-400 text-stone-800 shadow-inner" />
+                        <button onClick={() => handleBatchReward('money')} className="bg-amber-400 hover:bg-amber-500 text-white font-black px-5 py-3 rounded-xl whitespace-nowrap shadow-md transition">💰 일괄 지급</button>
+                      </div>
+                      <div className="flex gap-2">
+                        <input type="number" placeholder="경험치 입력" value={batchExp} onChange={e => setBatchExp(e.target.value)} className="w-full md:w-32 bg-white/95 border-none rounded-xl px-4 py-3 font-bold focus:ring-2 focus:ring-orange-400 text-stone-800 shadow-inner" />
+                        <button onClick={() => handleBatchReward('exp')} className="bg-blue-400 hover:bg-blue-500 text-white font-black px-5 py-3 rounded-xl whitespace-nowrap shadow-md transition">⭐ 일괄 지급</button>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  {students.map(student => (
-                    <StudentManagerCard key={student.id} student={student} updateStudentData={updateStudentData} showToast={showToast} shopItems={dbData.ShopItems} onOpenProfile={() => setSelectedStudentProfile(student)} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'tasks' && <TaskManagerTeacher currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
-            {activeTab === 'emotions' && <EmotionBoard currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
-            {activeTab === 'announcements' && <AnnouncementManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
-            {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
-            {activeTab === 'approvals' && <ApprovalManager dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
-
-            {selectedStudentProfile && <StudentProfileModal student={selectedStudentProfile} shopItems={dbData.ShopItems} onClose={() => setSelectedStudentProfile(null)} />}
-          </div>
-        );
-      }
-
-      function StudentManagerCard({ student, updateStudentData, showToast, shopItems, onOpenProfile }) {
-        const [expAmount, setExpAmount] = useState('');
-        const [moneyAmount, setMoneyAmount] = useState('');
-        const [newTitle, setNewTitle] = useState('');
-        const [selectedItemToGive, setSelectedItemToGive] = useState('');
-
-        const equippedItems = Array.isArray(student.equippedItems) ? student.equippedItems : [];
-        const safeShopItems = Array.isArray(shopItems) ? shopItems : [];
-        const equippedIcons = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon).filter(Boolean);
-        
-        const handleGiveItem = () => {
-          if(!selectedItemToGive) return showToast('아이템을 선택하세요.');
-          const owned = Array.isArray(student.ownedItems) ? student.ownedItems : [];
-          if(owned.some(id => String(id) === String(selectedItemToGive))) return showToast('이미 가진 아이템입니다.');
-          updateStudentData(student.id, { ownedItems: [...owned, selectedItemToGive] });
-          showToast(`${student.name}에게 선물을 주었습니다!`);
-          setSelectedItemToGive('');
-        };
-
-        const handleGiveTitle = () => {
-          if(!newTitle.trim()) return showToast('칭호를 입력하세요.');
-          const currentTitles = Array.isArray(student.ownedTitles) ? student.ownedTitles : [];
-          if(currentTitles.includes(newTitle)) return showToast('이미 가진 칭호입니다.');
-          updateStudentData(student.id, { ownedTitles: [...currentTitles, newTitle], title: newTitle });
-          showToast(`${student.name}에게 새 칭호를 주었습니다!`);
-          setNewTitle('');
-        };
-
-        return (
-          <div className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-stone-100 flex flex-col gap-5">
-            <div className="flex justify-between items-center border-b border-stone-50 pb-4">
-              <div className="flex items-center gap-4">
-                <div className="relative w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center border-4 border-white shadow-inner overflow-hidden cursor-pointer" onClick={onOpenProfile}>
-                   {student.faceUrl ? (
-                      <img src={student.faceUrl} alt="프로필" className="w-full h-full object-cover" />
-                   ) : (
-                      <span className="text-3xl text-orange-200">👦</span>
-                   )}
-                   <div className="absolute inset-0 flex items-center justify-center">
-                     {equippedIcons.map((icon, idx) => (
-                       isImageUrl(icon) ? <img key={idx} src={icon} alt="장착" className="absolute w-12 h-12 object-contain drop-shadow-md" /> : <span key={idx} className="absolute text-3xl drop-shadow-md">{safeText(icon)}</span>
-                     ))}
-                   </div>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <button onClick={onOpenProfile} className="font-black text-xl text-stone-800 hover:text-orange-500 transition-colors">{safeText(student.name)}</button>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {students.map(student => (
+                      <StudentManagerCard key={student.id} student={student} updateStudentData={updateStudentData} showToast={showToast} shopItems={dbData.ShopItems} onOpenProfile={() => setSelectedStudentProfile(student)} />
+                    ))}
                   </div>
-                  <div className="text-xs font-bold text-orange-700 bg-orange-100 px-3 py-1 rounded-full inline-block">{safeText(student.title) || '새싹 파도'}</div>
                 </div>
-              </div>
-              <div className="text-right">
-                <div className="font-black text-sky-600 text-lg">Lv.{student.level}</div>
-                <div className="text-xs font-bold text-stone-400 mt-1">⭐ {student.exp} | 🪙 {student.money}</div>
-              </div>
+              )}
+
+              {activeTab === 'tasks' && <TaskManagerTeacher currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
+              {activeTab === 'emotions' && <EmotionBoard currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+              {activeTab === 'announcements' && <AnnouncementManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+              {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+              {activeTab === 'approvals' && <ApprovalManager dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+
+              {selectedStudentProfile && <StudentProfileModal student={selectedStudentProfile} shopItems={dbData.ShopItems} onClose={() => setSelectedStudentProfile(null)} />}
             </div>
+          );
+        }
 
-            <div className="space-y-3">
-              <div className="flex gap-2">
-                <input type="number" placeholder="경험치 (예:10)" value={expAmount} onChange={e => setExpAmount(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-sky-300 font-bold text-stone-800" />
-                <button onClick={() => { updateStudentData(student.id, { exp: Number(student.exp) + Number(expAmount) }); showToast(`${student.name} EXP 지급!`); setExpAmount(''); }} className="bg-sky-400 hover:bg-sky-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">EXP 지급</button>
-              </div>
-              <div className="flex gap-2">
-                <input type="number" placeholder="용돈 (예:100)" value={moneyAmount} onChange={e => setMoneyAmount(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-amber-300 font-bold text-stone-800" />
-                <button onClick={() => { updateStudentData(student.id, { money: Number(student.money) + Number(moneyAmount) }); showToast(`${student.name} 용돈 지급!`); setMoneyAmount(''); }} className="bg-amber-400 hover:bg-amber-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">용돈 지급</button>
-              </div>
-              <div className="flex gap-2">
-                <input type="text" placeholder="새로운 칭호 하사하기" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-orange-300 font-bold text-stone-800" />
-                <button onClick={handleGiveTitle} className="bg-orange-400 hover:bg-orange-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">칭호 부여</button>
-              </div>
-              <div className="flex gap-2">
-                <select value={selectedItemToGive} onChange={e => setSelectedItemToGive(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-purple-300 font-bold outline-none text-stone-800">
-                  <option value="">🎁 상점 아이템 선물하기...</option>
-                  {safeShopItems.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
-                <button onClick={handleGiveItem} className="bg-purple-400 hover:bg-purple-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">선물하기</button>
-              </div>
-            </div>
-          </div>
-        );
-      }
+        function StudentManagerCard({ student, updateStudentData, showToast, shopItems, onOpenProfile }) {
+          const [expAmount, setExpAmount] = useState('');
+          const [moneyAmount, setMoneyAmount] = useState('');
+          const [newTitle, setNewTitle] = useState('');
+          const [selectedItemToGive, setSelectedItemToGive] = useState('');
 
-      function TaskManagerTeacher({ currentUser, dbData, setDbData, updateStudentData, syncToServer, showToast }) {
-        const [title, setTitle] = useState('');
-        const [desc, setDesc] = useState('');
-        const [deadlineDate, setDeadlineDate] = useState('');
-        const [deadlineTime, setDeadlineTime] = useState('');
-        const [selectedTaskId, setSelectedTaskId] = useState(null); 
-
-        const [editingTaskId, setEditingTaskId] = useState(null);
-        const [editTitle, setEditTitle] = useState('');
-        const [editDesc, setEditDesc] = useState('');
-        const [editDate, setEditDate] = useState('');
-        const [editTime, setEditTime] = useState('');
-        const [rewardModal, setRewardModal] = useState(null);
-        const [confirmAction, setConfirmAction] = useState(null); 
-
-        const students = dbData.Users.filter(u => u.role === 'student');
-        const tasks = Array.isArray(dbData.Tasks) ? dbData.Tasks : [];
-
-        const selectedTask = tasks.find(t => t.id === selectedTaskId) || null;
-
-        const handlePost = (e) => {
-          e.preventDefault();
-          if (!title || !desc) return;
-          const newTask = {
-            id: Date.now().toString(),
-            title,
-            description: desc,
-            deadlineDate,
-            deadlineTime,
-            authorName: currentUser.name,
-            submittedUsers: [],
-            approvedUsers: []
+          const equippedItems = Array.isArray(student.equippedItems) ? student.equippedItems : [];
+          const safeShopItems = Array.isArray(shopItems) ? shopItems : [];
+          const equippedIcons = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon).filter(Boolean);
+          
+          const handleGiveItem = () => {
+            if(!selectedItemToGive) return showToast('아이템을 선택하세요.');
+            const owned = Array.isArray(student.ownedItems) ? student.ownedItems : [];
+            if(owned.some(id => String(id) === String(selectedItemToGive))) return showToast('이미 가진 아이템입니다.');
+            updateStudentData(student.id, { ownedItems: [...owned, selectedItemToGive] });
+            showToast(`${student.name}에게 선물을 주었습니다!`);
+            setSelectedItemToGive('');
           };
-          setDbData(prev => ({ ...prev, Tasks: [newTask, ...tasks] }));
-          syncToServer('Tasks', 'INSERT', null, newTask);
-          setTitle(''); setDesc(''); setDeadlineDate(''); setDeadlineTime('');
-          showToast('새 할 일이 등록되었습니다! 📝');
-        };
 
-        const requestDelete = (id) => {
-          setConfirmAction({
-            title: '할 일 삭제',
-            message: '정말 이 할 일을 삭제할까요?\n학생들의 제출 기록도 모두 사라집니다.',
-            onConfirm: () => executeDelete(id)
-          });
-        };
+          const handleGiveTitle = () => {
+            if(!newTitle.trim()) return showToast('칭호를 입력하세요.');
+            const currentTitles = Array.isArray(student.ownedTitles) ? student.ownedTitles : [];
+            if(currentTitles.includes(newTitle)) return showToast('이미 가진 칭호입니다.');
+            updateStudentData(student.id, { ownedTitles: [...currentTitles, newTitle], title: newTitle });
+            showToast(`${student.name}에게 새 칭호를 주었습니다!`);
+            setNewTitle('');
+          };
 
-        const executeDelete = (id) => {
-          setDbData(prev => ({ ...prev, Tasks: prev.Tasks.filter(t => t.id !== id) }));
-          syncToServer('Tasks', 'DELETE', id, null);
-          setSelectedTaskId(null);
-          showToast('과제가 삭제되었습니다.');
-        };
-
-        const startEdit = (task) => {
-          setEditingTaskId(task.id);
-          setEditTitle(task.title);
-          setEditDesc(task.description);
-          setEditDate(task.deadlineDate || '');
-          setEditTime(task.deadlineTime || '');
-        };
-
-        const handleUpdateTask = (e) => {
-          e.preventDefault();
-          const updates = { title: editTitle, description: editDesc, deadlineDate: editDate, deadlineTime: editTime };
-          setDbData(prev => ({
-            ...prev,
-            Tasks: prev.Tasks.map(t => t.id === editingTaskId ? { ...t, ...updates } : t)
-          }));
-          syncToServer('Tasks', 'UPDATE', editingTaskId, updates);
-          setEditingTaskId(null);
-          showToast('할 일이 수정되었습니다. 📝');
-        };
-
-        const requestReject = (taskId, studentId, studentName) => {
-          setConfirmAction({
-            title: '다시 하세요 (반려)',
-            message: `${studentName} 학생의 과제를 반려할까요?\n제출 상태가 해제됩니다.`,
-            onConfirm: () => executeReject(taskId, studentId, studentName)
-          });
-        };
-
-        const executeReject = (taskId, studentId, studentName) => {
-          const task = tasks.find(t => t.id === taskId);
-          if(!task) return;
-          let newSubmitted = [...(task.submittedUsers || [])].filter(id => id !== studentId);
-          let newApproved = [...(task.approvedUsers || [])].filter(id => id !== studentId);
-          
-          setDbData(prev => ({
-            ...prev,
-            Tasks: prev.Tasks.map(t => t.id === taskId ? { ...t, submittedUsers: newSubmitted, approvedUsers: newApproved } : t)
-          }));
-          syncToServer('Tasks', 'UPDATE', taskId, { submittedUsers: newSubmitted, approvedUsers: newApproved });
-          showToast(`${studentName} 학생의 제출이 반려되었습니다.`);
-        };
-
-        const requestCancelApproval = (taskId, studentId, studentName) => {
-          setConfirmAction({
-            title: '확인 완료 취소',
-            message: `${studentName} 학생의 '확인 완료' 상태를 취소할까요? (다시 제출된 상태로 되돌아갑니다.)`,
-            onConfirm: () => executeCancelApproval(taskId, studentId, studentName)
-          });
-        };
-
-        const executeCancelApproval = (taskId, studentId, studentName) => {
-          const task = tasks.find(t => t.id === taskId);
-          if(!task) return;
-          let newApproved = [...(task.approvedUsers || [])].filter(id => id !== studentId);
-          
-          setDbData(prev => ({
-            ...prev,
-            Tasks: prev.Tasks.map(t => t.id === taskId ? { ...t, approvedUsers: newApproved } : t)
-          }));
-          syncToServer('Tasks', 'UPDATE', taskId, { approvedUsers: newApproved });
-          showToast(`${studentName} 학생의 확인 완료 상태가 취소되었습니다.`);
-        };
-
-        const showRewardModal = (taskId, studentId, studentName) => {
-          setRewardModal({ taskId, studentId, studentName, exp: '', money: '' });
-        };
-
-        const handleRewardApprove = () => {
-          const { taskId, studentId, studentName, exp, money } = rewardModal;
-          const task = tasks.find(t => t.id === taskId);
-          if(!task) return;
-          
-          const newApproved = [...(task.approvedUsers || [])];
-          if (!newApproved.includes(studentId)) newApproved.push(studentId);
-          
-          setDbData(prev => ({
-            ...prev,
-            Tasks: prev.Tasks.map(t => t.id === taskId ? { ...t, approvedUsers: newApproved } : t)
-          }));
-          syncToServer('Tasks', 'UPDATE', taskId, { approvedUsers: newApproved });
-
-          const expVal = parseInt(exp) || 0;
-          const moneyVal = parseInt(money) || 0;
-          const student = students.find(s => s.id === studentId);
-          if (student && (expVal > 0 || moneyVal > 0)) {
-             updateStudentData(studentId, {
-               exp: Number(student.exp) + expVal,
-               money: Number(student.money) + moneyVal
-             });
-             showToast(`${studentName} 학생 확인 완료! 보상 지급됨.`);
-          } else {
-             showToast(`${studentName} 학생 확인 완료!`);
-          }
-          
-          setRewardModal(null);
-        };
-
-        return (
-          <div className="space-y-6 relative">
-            <form onSubmit={handlePost} className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-indigo-100 space-y-4">
-              <h3 className="font-black text-xl text-indigo-900 mb-2">📝 새로운 할 일 등록</h3>
-              <input type="text" placeholder="제목 (예: 수학 익힘책 풀기)" value={title} onChange={e=>setTitle(e.target.value)} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800 shadow-inner" required />
-              <textarea placeholder="할 일의 자세한 내용을 적어주세요." value={desc} onChange={e=>setDesc(e.target.value)} rows="3" className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800 shadow-inner resize-none" required />
-              <div className="flex gap-4">
-                <div className="flex-1">
-                   <label className="block text-xs font-bold text-indigo-500 mb-1 pl-1">마감 날짜 (선택)</label>
-                   <input type="date" value={deadlineDate} onChange={e=>setDeadlineDate(e.target.value)} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800 shadow-inner" />
+          return (
+            <div className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-stone-100 flex flex-col gap-5">
+              <div className="flex justify-between items-center border-b border-stone-50 pb-4">
+                <div className="flex items-center gap-4">
+                  <div className="relative w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center border-4 border-white shadow-inner overflow-hidden cursor-pointer" onClick={onOpenProfile}>
+                     {student.faceUrl ? (
+                        <img src={student.faceUrl} alt="프로필" className="w-full h-full object-cover" />
+                     ) : (
+                        <span className="text-3xl text-orange-200">👦</span>
+                     )}
+                     <div className="absolute inset-0 flex items-center justify-center">
+                       {equippedIcons.map((icon, idx) => (
+                         isImageUrl(icon) ? <img key={idx} src={icon} alt="장착" className="absolute w-12 h-12 object-contain drop-shadow-md" /> : <span key={idx} className="absolute text-3xl drop-shadow-md">{safeText(icon)}</span>
+                       ))}
+                     </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <button onClick={onOpenProfile} className="font-black text-xl text-stone-800 hover:text-orange-500 transition-colors">{safeText(student.name)}</button>
+                    </div>
+                    <div className="text-xs font-bold text-orange-700 bg-orange-100 px-3 py-1 rounded-full inline-block">{safeText(student.title) || '새싹 파도'}</div>
+                  </div>
                 </div>
-                <div className="flex-1">
-                   <label className="block text-xs font-bold text-indigo-500 mb-1 pl-1">마감 시각 (선택)</label>
-                   <input type="time" value={deadlineTime} onChange={e=>setDeadlineTime(e.target.value)} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800 shadow-inner" />
+                <div className="text-right">
+                  <div className="font-black text-sky-600 text-lg">Lv.{student.level}</div>
+                  <div className="text-xs font-bold text-stone-400 mt-1">⭐ {student.exp} | 🪙 {student.money}</div>
                 </div>
               </div>
-              <button type="submit" className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-black py-4 rounded-xl shadow-md transition border border-indigo-600">할 일 등록하기</button>
-            </form>
 
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <input type="number" placeholder="경험치 (예:10)" value={expAmount} onChange={e => setExpAmount(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-sky-300 font-bold text-stone-800" />
+                  <button onClick={() => { updateStudentData(student.id, { exp: Number(student.exp) + Number(expAmount) }); showToast(`${student.name} EXP 지급!`); setExpAmount(''); }} className="bg-sky-400 hover:bg-sky-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">EXP 지급</button>
+                </div>
+                <div className="flex gap-2">
+                  <input type="number" placeholder="용돈 (예:100)" value={moneyAmount} onChange={e => setMoneyAmount(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-amber-300 font-bold text-stone-800" />
+                  <button onClick={() => { updateStudentData(student.id, { money: Number(student.money) + Number(moneyAmount) }); showToast(`${student.name} 용돈 지급!`); setMoneyAmount(''); }} className="bg-amber-400 hover:bg-amber-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">용돈 지급</button>
+                </div>
+                <div className="flex gap-2">
+                  <input type="text" placeholder="새로운 칭호 하사하기" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-orange-300 font-bold text-stone-800" />
+                  <button onClick={handleGiveTitle} className="bg-orange-400 hover:bg-orange-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">칭호 부여</button>
+                </div>
+                <div className="flex gap-2">
+                  <select value={selectedItemToGive} onChange={e => setSelectedItemToGive(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-3 py-3 text-sm focus:ring-2 focus:ring-purple-300 font-bold outline-none text-stone-800">
+                    <option value="">🎁 상점 아이템 선물하기...</option>
+                    {safeShopItems.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                  <button onClick={handleGiveItem} className="bg-purple-400 hover:bg-purple-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">선물하기</button>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        function TaskManagerTeacher({ currentUser, dbData, setDbData, updateStudentData, syncToServer, showToast }) {
+          const [title, setTitle] = useState('');
+          const [desc, setDesc] = useState('');
+          const [deadlineDate, setDeadlineDate] = useState('');
+          const [deadlineTime, setDeadlineTime] = useState('');
+          const [selectedTaskId, setSelectedTaskId] = useState(null); 
+
+          const [editingTaskId, setEditingTaskId] = useState(null);
+          const [editTitle, setEditTitle] = useState('');
+          const [editDesc, setEditDesc] = useState('');
+          const [editDate, setEditDate] = useState('');
+          const [editTime, setEditTime] = useState('');
+          const [rewardModal, setRewardModal] = useState(null);
+          const [confirmAction, setConfirmAction] = useState(null); 
+
+          const students = dbData.Users.filter(u => u.role === 'student');
+          const tasks = Array.isArray(dbData.Tasks) ? dbData.Tasks : [];
+
+          const selectedTask = tasks.find(t => t.id === selectedTaskId) || null;
+
+          const handlePost = (e) => {
+            e.preventDefault();
+            if (!title || !desc) return;
+            const newTask = {
+              id: Date.now().toString(),
+              title,
+              description: desc,
+              deadlineDate,
+              deadlineTime,
+              authorName: currentUser.name,
+              submittedUsers: [],
+              approvedUsers: []
+            };
+            setDbData(prev => ({ ...prev, Tasks: [newTask, ...tasks] }));
+            syncToServer('Tasks', 'INSERT', null, newTask);
+            setTitle(''); setDesc(''); setDeadlineDate(''); setDeadlineTime('');
+            showToast('새 할 일이 등록되었습니다! 📝');
+          };
+
+          const requestDelete = (id) => {
+            setConfirmAction({
+              title: '할 일 삭제',
+              message: '정말 이 할 일을 삭제할까요?\n학생들의 제출 기록도 모두 사라집니다.',
+              onConfirm: () => executeDelete(id)
+            });
+          };
+
+          const executeDelete = (id) => {
+            setDbData(prev => ({ ...prev, Tasks: prev.Tasks.filter(t => t.id !== id) }));
+            syncToServer('Tasks', 'DELETE', id, null);
+            setSelectedTaskId(null);
+            showToast('과제가 삭제되었습니다.');
+          };
+
+          const startEdit = (task) => {
+            setEditingTaskId(task.id);
+            setEditTitle(task.title);
+            setEditDesc(task.description);
+            setEditDate(task.deadlineDate || '');
+            setEditTime(task.deadlineTime || '');
+          };
+
+          const handleUpdateTask = (e) => {
+            e.preventDefault();
+            const updates = { title: editTitle, description: editDesc, deadlineDate: editDate, deadlineTime: editTime };
+            setDbData(prev => ({
+              ...prev,
+              Tasks: prev.Tasks.map(t => t.id === editingTaskId ? { ...t, ...updates } : t)
+            }));
+            syncToServer('Tasks', 'UPDATE', editingTaskId, updates);
+            setEditingTaskId(null);
+            showToast('할 일이 수정되었습니다. 📝');
+          };
+
+          const requestReject = (taskId, studentId, studentName) => {
+            setConfirmAction({
+              title: '다시 하세요 (반려)',
+              message: `${studentName} 학생의 과제를 반려할까요?\n제출 상태가 해제됩니다.`,
+              onConfirm: () => executeReject(taskId, studentId, studentName)
+            });
+          };
+
+          const executeReject = (taskId, studentId, studentName) => {
+            const task = tasks.find(t => t.id === taskId);
+            if(!task) return;
+            let newSubmitted = [...(task.submittedUsers || [])].filter(id => id !== studentId);
+            let newApproved = [...(task.approvedUsers || [])].filter(id => id !== studentId);
+            
+            setDbData(prev => ({
+              ...prev,
+              Tasks: prev.Tasks.map(t => t.id === taskId ? { ...t, submittedUsers: newSubmitted, approvedUsers: newApproved } : t)
+            }));
+            syncToServer('Tasks', 'UPDATE', taskId, { submittedUsers: newSubmitted, approvedUsers: newApproved });
+            showToast(`${studentName} 학생의 제출이 반려되었습니다.`);
+          };
+
+          const requestCancelApproval = (taskId, studentId, studentName) => {
+            setConfirmAction({
+              title: '확인 완료 취소',
+              message: `${studentName} 학생의 '확인 완료' 상태를 취소할까요? (다시 제출된 상태로 되돌아갑니다.)`,
+              onConfirm: () => executeCancelApproval(taskId, studentId, studentName)
+            });
+          };
+
+          const executeCancelApproval = (taskId, studentId, studentName) => {
+            const task = tasks.find(t => t.id === taskId);
+            if(!task) return;
+            let newApproved = [...(task.approvedUsers || [])].filter(id => id !== studentId);
+            
+            setDbData(prev => ({
+              ...prev,
+              Tasks: prev.Tasks.map(t => t.id === taskId ? { ...t, approvedUsers: newApproved } : t)
+            }));
+            syncToServer('Tasks', 'UPDATE', taskId, { approvedUsers: newApproved });
+            showToast(`${studentName} 학생의 확인 완료 상태가 취소되었습니다.`);
+          };
+
+          const showRewardModal = (taskId, studentId, studentName) => {
+            setRewardModal({ taskId, studentId, studentName, exp: '', money: '' });
+          };
+
+          const handleRewardApprove = () => {
+            const { taskId, studentId, studentName, exp, money } = rewardModal;
+            const task = tasks.find(t => t.id === taskId);
+            if(!task) return;
+            
+            const newApproved = [...(task.approvedUsers || [])];
+            if (!newApproved.includes(studentId)) newApproved.push(studentId);
+            
+            setDbData(prev => ({
+              ...prev,
+              Tasks: prev.Tasks.map(t => t.id === taskId ? { ...t, approvedUsers: newApproved } : t)
+            }));
+            syncToServer('Tasks', 'UPDATE', taskId, { approvedUsers: newApproved });
+
+            const expVal = parseInt(exp) || 0;
+            const moneyVal = parseInt(money) || 0;
+            const student = students.find(s => s.id === studentId);
+            if (student && (expVal > 0 || moneyVal > 0)) {
+               updateStudentData(studentId, {
+                 exp: Number(student.exp) + expVal,
+                 money: Number(student.money) + moneyVal
+               });
+               showToast(`${studentName} 학생 확인 완료! 보상 지급됨.`);
+            } else {
+               showToast(`${studentName} 학생 확인 완료!`);
+            }
+            
+            setRewardModal(null);
+          };
+
+          return (
+            <div className="space-y-6 relative">
+              <form onSubmit={handlePost} className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-indigo-100 space-y-4">
+                <h3 className="font-black text-xl text-indigo-900 mb-2">📝 새로운 할 일 등록</h3>
+                <input type="text" placeholder="제목 (예: 수학 익힘책 풀기)" value={title} onChange={e=>setTitle(e.target.value)} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800 shadow-inner" required />
+                <textarea placeholder="할 일의 자세한 내용을 적어주세요." value={desc} onChange={e=>setDesc(e.target.value)} rows="3" className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800 shadow-inner resize-none" required />
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                     <label className="block text-xs font-bold text-indigo-500 mb-1 pl-1">마감 날짜 (선택)</label>
+                     <input type="date" value={deadlineDate} onChange={e=>setDeadlineDate(e.target.value)} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800 shadow-inner" />
+                  </div>
+                  <div className="flex-1">
+                     <label className="block text-xs font-bold text-indigo-500 mb-1 pl-1">마감 시각 (선택)</label>
+                     <input type="time" value={deadlineTime} onChange={e=>setDeadlineTime(e.target.value)} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800 shadow-inner" />
+                  </div>
+                </div>
+                <button type="submit" className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-black py-4 rounded-xl shadow-md transition border border-indigo-600">할 일 등록하기</button>
+              </form>
+
+              <div className="space-y-4">
+                {tasks.length === 0 ? (
+                  <div className="text-center py-10 text-indigo-400 font-black bg-white/50 border border-indigo-100 rounded-[2rem]">등록된 할 일이 없습니다.</div>
+                ) : (
+                  tasks.map(task => {
+                    const submittedCount = Array.isArray(task.submittedUsers) ? task.submittedUsers.length : 0;
+                    const approvedCount = Array.isArray(task.approvedUsers) ? task.approvedUsers.length : 0;
+                    const totalCount = students.length;
+                    
+                    return (
+                      <div key={task.id} onClick={() => setSelectedTaskId(task.id)} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-indigo-50 cursor-pointer hover:border-indigo-300 hover:shadow-md transition-all group relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-20 h-20 bg-indigo-50 rounded-bl-full -z-10 group-hover:scale-110 transition-transform"></div>
+                        
+                        <div className="flex justify-between items-start mb-2">
+                          <h4 className="font-black text-xl text-stone-800">{safeText(task.title)}</h4>
+                          <div className="text-right shrink-0">
+                            <span className="text-xs bg-indigo-100 text-indigo-800 font-black px-3 py-1 rounded-full whitespace-nowrap">
+                              제출 {submittedCount}/{totalCount}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {task.deadlineDate && (
+                          <div className="text-xs text-rose-500 font-bold mb-3">
+                            마감: {task.deadlineDate} {task.deadlineTime || ''}
+                          </div>
+                        )}
+                        
+                        <p className="text-stone-600 font-medium text-sm line-clamp-2">{safeText(task.description)}</p>
+                        
+                        <div className="mt-4 pt-3 border-t border-stone-50 flex justify-between items-center">
+                          <span className="text-xs text-stone-400 font-bold">자세히 보려면 클릭하세요</span>
+                          <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100">
+                            확인완료 {approvedCount}명
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {selectedTask && (
+                <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-4" onClick={(e) => {if(e.target === e.currentTarget) {setSelectedTaskId(null); setEditingTaskId(null);}}}>
+                  <div className="bg-white rounded-[2.5rem] p-6 md:p-8 max-w-2xl w-full shadow-2xl relative max-h-[90vh] flex flex-col border border-indigo-100">
+                    
+                    {editingTaskId ? (
+                      <form onSubmit={handleUpdateTask} className="space-y-4 mb-4">
+                        <div className="flex justify-between items-center mb-2">
+                          <h3 className="font-black text-xl text-indigo-900">할 일 수정</h3>
+                          <button type="button" onClick={() => setEditingTaskId(null)} className="text-sm font-bold text-stone-400 hover:text-stone-600">취소</button>
+                        </div>
+                        <input type="text" value={editTitle} onChange={e=>setEditTitle(e.target.value)} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800" required />
+                        <textarea value={editDesc} onChange={e=>setEditDesc(e.target.value)} rows="3" className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800 resize-none" required />
+                        <div className="flex gap-4">
+                          <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800" />
+                          <input type="time" value={editTime} onChange={e=>setEditTime(e.target.value)} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800" />
+                        </div>
+                        <button type="submit" className="w-full bg-indigo-500 text-white font-black py-3 rounded-xl shadow-md">저장하기</button>
+                      </form>
+                    ) : (
+                      <div className="mb-6 flex justify-between items-start gap-4">
+                        <div>
+                          <h3 className="font-black text-2xl text-stone-800 mb-2">{safeText(selectedTask.title)}</h3>
+                          {selectedTask.deadlineDate && <div className="text-sm text-rose-500 font-bold mb-3">마감: {selectedTask.deadlineDate} {selectedTask.deadlineTime || ''}</div>}
+                          <p className="text-stone-600 font-medium whitespace-pre-wrap text-sm bg-stone-50 p-4 rounded-2xl">{safeText(selectedTask.description)}</p>
+                        </div>
+                        <div className="flex gap-2 shrink-0 flex-col sm:flex-row">
+                          <button onClick={() => startEdit(selectedTask)} className="bg-stone-100 text-stone-600 hover:bg-stone-200 p-2 px-3 rounded-xl font-bold transition text-sm">수정</button>
+                          <button onClick={() => requestDelete(selectedTask.id)} className="bg-rose-50 text-rose-500 hover:bg-rose-100 p-2 px-3 rounded-xl font-bold transition text-sm">삭제</button>
+                          <button onClick={() => {setSelectedTaskId(null); setEditingTaskId(null);}} className="bg-stone-800 text-white hover:bg-stone-900 p-2 px-3 rounded-xl font-bold transition text-sm">닫기</button>
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                      <h4 className="font-black text-lg text-indigo-800 mb-3 border-b border-indigo-100 pb-2">학생 제출 현황</h4>
+                      <div className="space-y-2">
+                        {students.map(student => {
+                          const isSubmitted = (selectedTask.submittedUsers || []).includes(student.id);
+                          const isApproved = (selectedTask.approvedUsers || []).includes(student.id);
+                          
+                          return (
+                            <div key={student.id} className={`flex items-center justify-between p-3 rounded-xl border ${isApproved ? 'bg-emerald-50/50 border-emerald-100' : isSubmitted ? 'bg-indigo-50/50 border-indigo-100' : 'bg-stone-50 border-stone-100'}`}>
+                              <span className="font-bold text-stone-800 flex items-center gap-2">
+                                {safeText(student.name)}
+                              </span>
+                              
+                              {isApproved ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-black text-emerald-600 bg-emerald-100 px-3 py-1.5 rounded-full">확인 완료 🎉</span>
+                                  <button onClick={() => requestCancelApproval(selectedTask.id, student.id, student.name)} className="text-[10px] font-bold bg-amber-100 hover:bg-amber-200 text-amber-700 px-2 py-1.5 rounded-lg transition shadow-sm" title="확인 완료 취소">취소</button>
+                                </div>
+                              ) : isSubmitted ? (
+                                <div className="flex items-center gap-2">
+                                  <button onClick={() => requestReject(selectedTask.id, student.id, student.name)} className="text-[10px] font-bold bg-rose-100 hover:bg-rose-200 text-rose-700 px-3 py-1.5 rounded-xl transition">다시 하세요 ↩️</button>
+                                  <button onClick={() => showRewardModal(selectedTask.id, student.id, student.name)} className="text-xs font-black bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-1.5 rounded-full transition shadow-sm">잘 했어요 👍</button>
+                                </div>
+                              ) : (
+                                <span className="text-xs font-bold text-stone-400 bg-stone-100 px-3 py-1.5 rounded-full">미제출</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {rewardModal && (
+                <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+                  <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl relative border-4 border-indigo-200">
+                    <h3 className="font-black text-2xl text-indigo-900 mb-2">🎉 잘 했어요!</h3>
+                    <p className="text-stone-600 font-bold mb-6 text-sm break-keep">{rewardModal.studentName} 학생에게 보상을 줄까요? (입력하지 않으면 보상 없이 확인만 됩니다.)</p>
+                    
+                    <div className="space-y-3 mb-6">
+                      <div>
+                        <label className="block text-xs font-bold text-indigo-600 mb-1">⭐ 경험치 (EXP) 지급</label>
+                        <input type="number" placeholder="예: 10" value={rewardModal.exp} onChange={e => setRewardModal({...rewardModal, exp: e.target.value})} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-amber-600 mb-1">🪙 용돈 지급</label>
+                        <input type="number" placeholder="예: 100" value={rewardModal.money} onChange={e => setRewardModal({...rewardModal, money: e.target.value})} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-amber-300 font-bold text-stone-800" />
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-3">
+                      <button onClick={() => setRewardModal(null)} className="flex-1 bg-stone-100 text-stone-600 font-black py-4 rounded-2xl hover:bg-stone-200 transition">취소</button>
+                      <button onClick={handleRewardApprove} className="flex-1 bg-indigo-500 text-white font-black py-4 rounded-2xl shadow-md hover:bg-indigo-600 transition">확인 완료</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {confirmAction && (
+                <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+                  <div className="bg-white rounded-[2rem] p-6 max-w-xs w-full shadow-2xl text-center border-4 border-stone-100">
+                    <h3 className="font-black text-xl text-stone-800 mb-2">{confirmAction.title}</h3>
+                    <p className="text-stone-600 font-bold mb-6 text-sm whitespace-pre-wrap">{confirmAction.message}</p>
+                    <div className="flex gap-3">
+                      <button onClick={() => setConfirmAction(null)} className="flex-1 bg-stone-100 text-stone-600 font-black py-3 rounded-xl hover:bg-stone-200">아니오</button>
+                      <button onClick={() => { confirmAction.onConfirm(); setConfirmAction(null); }} className="flex-1 bg-rose-500 text-white font-black py-3 rounded-xl shadow-md hover:bg-rose-600">예, 진행합니다</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        function TaskManagerStudent({ currentUser, dbData, setDbData, syncToServer, showToast }) {
+          const tasks = Array.isArray(dbData.Tasks) ? dbData.Tasks : [];
+          const [confirmAction, setConfirmAction] = useState(null);
+
+          const requestSubmit = (taskId) => {
+            setConfirmAction({
+              title: '다 했어요 ✋',
+              message: '이 할 일을 다 끝냈나요?\n선생님께 완료를 알립니다.',
+              onConfirm: () => executeSubmit(taskId)
+            });
+          };
+
+          const executeSubmit = (taskId) => {
+            const task = tasks.find(t => t.id === taskId);
+            if(!task) return;
+            const newSubmitted = [...(task.submittedUsers || []), currentUser.id];
+            setDbData(prev => ({
+              ...prev,
+              Tasks: prev.Tasks.map(t => t.id === taskId ? { ...t, submittedUsers: newSubmitted } : t)
+            }));
+            syncToServer('Tasks', 'UPDATE', taskId, { submittedUsers: newSubmitted });
+            showToast('과제를 제출했습니다! 📝');
+          };
+
+          const requestCancelSubmit = (taskId) => {
+            setConfirmAction({
+              title: '제출 취소',
+              message: '아직 덜 끝냈나요?\n제출 상태를 취소합니다.',
+              onConfirm: () => executeCancelSubmit(taskId)
+            });
+          };
+
+          const executeCancelSubmit = (taskId) => {
+            const task = tasks.find(t => t.id === taskId);
+            if(!task) return;
+            const newSubmitted = (task.submittedUsers || []).filter(id => id !== currentUser.id);
+            setDbData(prev => ({
+              ...prev,
+              Tasks: prev.Tasks.map(t => t.id === taskId ? { ...t, submittedUsers: newSubmitted } : t)
+            }));
+            syncToServer('Tasks', 'UPDATE', taskId, { submittedUsers: newSubmitted });
+            showToast('제출을 취소했습니다.');
+          };
+
+          return (
             <div className="space-y-4">
               {tasks.length === 0 ? (
                 <div className="text-center py-10 text-indigo-400 font-black bg-white/50 border border-indigo-100 rounded-[2rem]">등록된 할 일이 없습니다.</div>
               ) : (
                 tasks.map(task => {
-                  const submittedCount = Array.isArray(task.submittedUsers) ? task.submittedUsers.length : 0;
-                  const approvedCount = Array.isArray(task.approvedUsers) ? task.approvedUsers.length : 0;
-                  const totalCount = students.length;
-                  
+                  const isSubmitted = (task.submittedUsers || []).includes(currentUser.id);
+                  const isApproved = (task.approvedUsers || []).includes(currentUser.id);
+
                   return (
-                    <div key={task.id} onClick={() => setSelectedTaskId(task.id)} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-indigo-50 cursor-pointer hover:border-indigo-300 hover:shadow-md transition-all group relative overflow-hidden">
-                      <div className="absolute top-0 right-0 w-20 h-20 bg-indigo-50 rounded-bl-full -z-10 group-hover:scale-110 transition-transform"></div>
-                      
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-black text-xl text-stone-800">{safeText(task.title)}</h4>
-                        <div className="text-right shrink-0">
-                          <span className="text-xs bg-indigo-100 text-indigo-800 font-black px-3 py-1 rounded-full whitespace-nowrap">
-                            제출 {submittedCount}/{totalCount}
-                          </span>
-                        </div>
-                      </div>
-                      
+                    <div key={task.id} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-indigo-50 relative overflow-hidden group">
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-50/50 rounded-bl-[100px] -z-10"></div>
+                      <h4 className="font-black text-xl text-stone-800 mb-2">{safeText(task.title)}</h4>
                       {task.deadlineDate && (
-                        <div className="text-xs text-rose-500 font-bold mb-3">
-                          마감: {task.deadlineDate} {task.deadlineTime || ''}
-                        </div>
+                        <div className="text-xs text-rose-500 font-bold mb-3">마감: {task.deadlineDate} {task.deadlineTime || ''}</div>
                       )}
-                      
-                      <p className="text-stone-600 font-medium text-sm line-clamp-2">{safeText(task.description)}</p>
-                      
-                      <div className="mt-4 pt-3 border-t border-stone-50 flex justify-between items-center">
-                        <span className="text-xs text-stone-400 font-bold">자세히 보려면 클릭하세요</span>
-                        <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100">
-                          확인완료 {approvedCount}명
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+                      <p className="text-stone-600 font-medium text-sm whitespace-pre-wrap bg-stone-50 p-4 rounded-2xl mb-4">{safeText(task.description)}</p>
 
-            {selectedTask && (
-              <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm flex items-center justify-center z-[100] p-4" onClick={(e) => {if(e.target === e.currentTarget) {setSelectedTaskId(null); setEditingTaskId(null);}}}>
-                <div className="bg-white rounded-[2.5rem] p-6 md:p-8 max-w-2xl w-full shadow-2xl relative max-h-[90vh] flex flex-col border border-indigo-100">
-                  
-                  {editingTaskId ? (
-                    <form onSubmit={handleUpdateTask} className="space-y-4 mb-4">
-                      <div className="flex justify-between items-center mb-2">
-                        <h3 className="font-black text-xl text-indigo-900">할 일 수정</h3>
-                        <button type="button" onClick={() => setEditingTaskId(null)} className="text-sm font-bold text-stone-400 hover:text-stone-600">취소</button>
-                      </div>
-                      <input type="text" value={editTitle} onChange={e=>setEditTitle(e.target.value)} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800" required />
-                      <textarea value={editDesc} onChange={e=>setEditDesc(e.target.value)} rows="3" className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800 resize-none" required />
-                      <div className="flex gap-4">
-                        <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800" />
-                        <input type="time" value={editTime} onChange={e=>setEditTime(e.target.value)} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800" />
-                      </div>
-                      <button type="submit" className="w-full bg-indigo-500 text-white font-black py-3 rounded-xl shadow-md">저장하기</button>
-                    </form>
-                  ) : (
-                    <div className="mb-6 flex justify-between items-start gap-4">
-                      <div>
-                        <h3 className="font-black text-2xl text-stone-800 mb-2">{safeText(selectedTask.title)}</h3>
-                        {selectedTask.deadlineDate && <div className="text-sm text-rose-500 font-bold mb-3">마감: {selectedTask.deadlineDate} {selectedTask.deadlineTime || ''}</div>}
-                        <p className="text-stone-600 font-medium whitespace-pre-wrap text-sm bg-stone-50 p-4 rounded-2xl">{safeText(selectedTask.description)}</p>
-                      </div>
-                      <div className="flex gap-2 shrink-0 flex-col sm:flex-row">
-                        <button onClick={() => startEdit(selectedTask)} className="bg-stone-100 text-stone-600 hover:bg-stone-200 p-2 px-3 rounded-xl font-bold transition text-sm">수정</button>
-                        <button onClick={() => requestDelete(selectedTask.id)} className="bg-rose-50 text-rose-500 hover:bg-rose-100 p-2 px-3 rounded-xl font-bold transition text-sm">삭제</button>
-                        <button onClick={() => {setSelectedTaskId(null); setEditingTaskId(null);}} className="bg-stone-800 text-white hover:bg-stone-900 p-2 px-3 rounded-xl font-bold transition text-sm">닫기</button>
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                    <h4 className="font-black text-lg text-indigo-800 mb-3 border-b border-indigo-100 pb-2">학생 제출 현황</h4>
-                    <div className="space-y-2">
-                      {students.map(student => {
-                        const isSubmitted = (selectedTask.submittedUsers || []).includes(student.id);
-                        const isApproved = (selectedTask.approvedUsers || []).includes(student.id);
-                        
-                        return (
-                          <div key={student.id} className={`flex items-center justify-between p-3 rounded-xl border ${isApproved ? 'bg-emerald-50/50 border-emerald-100' : isSubmitted ? 'bg-indigo-50/50 border-indigo-100' : 'bg-stone-50 border-stone-100'}`}>
-                            <span className="font-bold text-stone-800 flex items-center gap-2">
-                              {safeText(student.name)}
-                            </span>
-                            
-                            {isApproved ? (
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-black text-emerald-600 bg-emerald-100 px-3 py-1.5 rounded-full">확인 완료 🎉</span>
-                                <button onClick={() => requestCancelApproval(selectedTask.id, student.id, student.name)} className="text-[10px] font-bold bg-amber-100 hover:bg-amber-200 text-amber-700 px-2 py-1.5 rounded-lg transition shadow-sm" title="확인 완료 취소">취소</button>
-                              </div>
-                            ) : isSubmitted ? (
-                              <div className="flex items-center gap-2">
-                                <button onClick={() => requestReject(selectedTask.id, student.id, student.name)} className="text-[10px] font-bold bg-rose-100 hover:bg-rose-200 text-rose-700 px-3 py-1.5 rounded-xl transition">다시 하세요 ↩️</button>
-                                <button onClick={() => showRewardModal(selectedTask.id, student.id, student.name)} className="text-xs font-black bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-1.5 rounded-full transition shadow-sm">잘 했어요 👍</button>
-                              </div>
-                            ) : (
-                              <span className="text-xs font-bold text-stone-400 bg-stone-100 px-3 py-1.5 rounded-full">미제출</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {rewardModal && (
-              <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
-                <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl relative border-4 border-indigo-200">
-                  <h3 className="font-black text-2xl text-indigo-900 mb-2">🎉 잘 했어요!</h3>
-                  <p className="text-stone-600 font-bold mb-6 text-sm break-keep">{rewardModal.studentName} 학생에게 보상을 줄까요? (입력하지 않으면 보상 없이 확인만 됩니다.)</p>
-                  
-                  <div className="space-y-3 mb-6">
-                    <div>
-                      <label className="block text-xs font-bold text-indigo-600 mb-1">⭐ 경험치 (EXP) 지급</label>
-                      <input type="number" placeholder="예: 10" value={rewardModal.exp} onChange={e => setRewardModal({...rewardModal, exp: e.target.value})} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-amber-600 mb-1">🪙 용돈 지급</label>
-                      <input type="number" placeholder="예: 100" value={rewardModal.money} onChange={e => setRewardModal({...rewardModal, money: e.target.value})} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-amber-300 font-bold text-stone-800" />
-                    </div>
-                  </div>
-                  
-                  <div className="flex gap-3">
-                    <button onClick={() => setRewardModal(null)} className="flex-1 bg-stone-100 text-stone-600 font-black py-4 rounded-2xl hover:bg-stone-200 transition">취소</button>
-                    <button onClick={handleRewardApprove} className="flex-1 bg-indigo-500 text-white font-black py-4 rounded-2xl shadow-md hover:bg-indigo-600 transition">확인 완료</button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {confirmAction && (
-              <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
-                <div className="bg-white rounded-[2rem] p-6 max-w-xs w-full shadow-2xl text-center border-4 border-stone-100">
-                  <h3 className="font-black text-xl text-stone-800 mb-2">{confirmAction.title}</h3>
-                  <p className="text-stone-600 font-bold mb-6 text-sm whitespace-pre-wrap">{confirmAction.message}</p>
-                  <div className="flex gap-3">
-                    <button onClick={() => setConfirmAction(null)} className="flex-1 bg-stone-100 text-stone-600 font-black py-3 rounded-xl hover:bg-stone-200">아니오</button>
-                    <button onClick={() => { confirmAction.onConfirm(); setConfirmAction(null); }} className="flex-1 bg-rose-500 text-white font-black py-3 rounded-xl shadow-md hover:bg-rose-600">예, 진행합니다</button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      }
-
-      function TaskManagerStudent({ currentUser, dbData, setDbData, syncToServer, showToast }) {
-        const tasks = Array.isArray(dbData.Tasks) ? dbData.Tasks : [];
-        const [confirmAction, setConfirmAction] = useState(null);
-
-        const requestSubmit = (taskId) => {
-          setConfirmAction({
-            title: '다 했어요 ✋',
-            message: '이 할 일을 다 끝냈나요?\n선생님께 완료를 알립니다.',
-            onConfirm: () => executeSubmit(taskId)
-          });
-        };
-
-        const executeSubmit = (taskId) => {
-          const task = tasks.find(t => t.id === taskId);
-          if(!task) return;
-          const newSubmitted = [...(task.submittedUsers || []), currentUser.id];
-          setDbData(prev => ({
-            ...prev,
-            Tasks: prev.Tasks.map(t => t.id === taskId ? { ...t, submittedUsers: newSubmitted } : t)
-          }));
-          syncToServer('Tasks', 'UPDATE', taskId, { submittedUsers: newSubmitted });
-          showToast('과제를 제출했습니다! 📝');
-        };
-
-        const requestCancelSubmit = (taskId) => {
-          setConfirmAction({
-            title: '제출 취소',
-            message: '아직 덜 끝냈나요?\n제출 상태를 취소합니다.',
-            onConfirm: () => executeCancelSubmit(taskId)
-          });
-        };
-
-        const executeCancelSubmit = (taskId) => {
-          const task = tasks.find(t => t.id === taskId);
-          if(!task) return;
-          const newSubmitted = (task.submittedUsers || []).filter(id => id !== currentUser.id);
-          setDbData(prev => ({
-            ...prev,
-            Tasks: prev.Tasks.map(t => t.id === taskId ? { ...t, submittedUsers: newSubmitted } : t)
-          }));
-          syncToServer('Tasks', 'UPDATE', taskId, { submittedUsers: newSubmitted });
-          showToast('제출을 취소했습니다.');
-        };
-
-        return (
-          <div className="space-y-4">
-            {tasks.length === 0 ? (
-              <div className="text-center py-10 text-indigo-400 font-black bg-white/50 border border-indigo-100 rounded-[2rem]">등록된 할 일이 없습니다.</div>
-            ) : (
-              tasks.map(task => {
-                const isSubmitted = (task.submittedUsers || []).includes(currentUser.id);
-                const isApproved = (task.approvedUsers || []).includes(currentUser.id);
-
-                return (
-                  <div key={task.id} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-indigo-50 relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-50/50 rounded-bl-[100px] -z-10"></div>
-                    <h4 className="font-black text-xl text-stone-800 mb-2">{safeText(task.title)}</h4>
-                    {task.deadlineDate && (
-                      <div className="text-xs text-rose-500 font-bold mb-3">마감: {task.deadlineDate} {task.deadlineTime || ''}</div>
-                    )}
-                    <p className="text-stone-600 font-medium text-sm whitespace-pre-wrap bg-stone-50 p-4 rounded-2xl mb-4">{safeText(task.description)}</p>
-
-                    <div className="flex justify-end mt-4">
-                      {isApproved ? (
-                        <div className="bg-emerald-100 text-emerald-700 font-black px-4 py-2 rounded-xl border border-emerald-200 shadow-sm">선생님 확인 완료! 🎉</div>
-                      ) : isSubmitted ? (
-                        <button onClick={() => requestCancelSubmit(task.id)} className="bg-stone-200 hover:bg-stone-300 text-stone-700 font-black px-5 py-3 rounded-xl transition shadow-sm">제출 취소</button>
-                      ) : (
-                        <button onClick={() => requestSubmit(task.id)} className="bg-indigo-500 hover:bg-indigo-600 text-white font-black px-5 py-3 rounded-xl transition shadow-md">다 했어요 ✋</button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })
-            )}
-
-            {confirmAction && (
-              <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
-                <div className="bg-white rounded-[2rem] p-6 max-w-xs w-full shadow-2xl text-center border-4 border-stone-100">
-                  <h3 className="font-black text-xl text-stone-800 mb-2">{confirmAction.title}</h3>
-                  <p className="text-stone-600 font-bold mb-6 text-sm whitespace-pre-wrap">{confirmAction.message}</p>
-                  <div className="flex gap-3">
-                    <button onClick={() => setConfirmAction(null)} className="flex-1 bg-stone-100 text-stone-600 font-black py-3 rounded-xl hover:bg-stone-200">아니오</button>
-                    <button onClick={() => { confirmAction.onConfirm(); setConfirmAction(null); }} className="flex-1 bg-indigo-500 text-white font-black py-3 rounded-xl shadow-md hover:bg-indigo-600">예</button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      }
-
-      function StudentDashboard({ currentUser, dbData, setDbData, updateStudentData, syncToServer, showToast, onOpenPwdModal }) {
-        const [activeTab, setActiveTab] = useState('profile');
-        
-        const tasks = Array.isArray(dbData.Tasks) ? dbData.Tasks : [];
-        const unsubmittedTasksCount = tasks.filter(t => {
-          const isSubmitted = (t.submittedUsers || []).includes(currentUser.id);
-          const isApproved = (t.approvedUsers || []).includes(currentUser.id);
-          return !isSubmitted && !isApproved;
-        }).length;
-
-        const navItems = [
-          { id: 'profile', label: '내 정보', icon: '🐳' },
-          { id: 'tasks', label: '할 일', icon: '📝', badge: unsubmittedTasksCount },
-          { id: 'emotions', label: '마음 일기', icon: '🫧' },
-          { id: 'halloffame', label: '명예의 전당', icon: '🏆' },
-          { id: 'announcements', label: '알림장', icon: '📢' },
-          { id: 'shop', label: '상점', icon: '🛍️' },
-        ];
-
-        return (
-          <div className="space-y-6">
-            <div className="hidden md:flex bg-white/90 backdrop-blur-sm rounded-[2rem] shadow-sm p-3 gap-3 mb-6 border border-orange-100">
-              {navItems.map(item => (
-                <button key={item.id} onClick={() => setActiveTab(item.id)} className={`relative flex-1 flex flex-col items-center justify-center gap-1 py-3 px-2 rounded-[1.5rem] font-black transition-all ${activeTab === item.id ? 'bg-orange-400 text-white shadow-md transform -translate-y-1' : 'text-stone-600 hover:bg-orange-50'}`}>
-                  <span className="text-2xl">{item.icon}</span>
-                  <span className="text-sm">{item.label}</span>
-                  {item.badge > 0 && <span className="absolute top-1 right-2 bg-rose-500 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full shadow-sm animate-pulse">{item.badge}</span>}
-                </button>
-              ))}
-            </div>
-
-            {activeTab === 'profile' && <StudentProfile currentUser={currentUser} shopItems={dbData.ShopItems} updateStudentData={updateStudentData} showToast={showToast} onOpenPwdModal={onOpenPwdModal} />}
-            {activeTab === 'tasks' && <TaskManagerStudent currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
-            {activeTab === 'emotions' && <EmotionBoard currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
-            {activeTab === 'shop' && <Shop currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
-            {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
-            {activeTab === 'announcements' && (
-              <div className="space-y-4">
-                <h2 className="font-black text-2xl pl-2 flex items-center gap-2 text-sky-800">📢 선생님 알림장</h2>
-                <AnnouncementManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />
-              </div>
-            )}
-
-            <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-orange-100 pb-safe z-50 md:hidden flex justify-around p-3 rounded-t-[2rem] shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
-              {navItems.map(item => (
-                <button key={item.id} onClick={() => setActiveTab(item.id)} className={`relative flex flex-col items-center p-2 w-full transition-transform ${activeTab === item.id ? 'text-orange-500 scale-110' : 'text-stone-400 hover:text-orange-400'}`}>
-                  <span className="text-2xl mb-1">{item.icon}</span>
-                  <span className="text-[10px] font-black">{item.label}</span>
-                  {item.badge > 0 && <span className="absolute top-0 right-1 bg-rose-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full shadow-sm animate-pulse">{item.badge}</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-      }
-
-      function StudentProfile({ currentUser, shopItems, updateStudentData, showToast, onOpenPwdModal }) {
-        const currentExp = currentUser.exp % EXP_PER_LEVEL;
-        const expPercent = (currentExp / EXP_PER_LEVEL) * 100;
-
-        const equippedItems = Array.isArray(currentUser.equippedItems) ? currentUser.equippedItems : [];
-        const ownedItems = Array.isArray(currentUser.ownedItems) ? currentUser.ownedItems : [];
-        const ownedTitles = Array.isArray(currentUser.ownedTitles) ? currentUser.ownedTitles : [];
-        const safeShopItems = Array.isArray(shopItems) ? shopItems : [];
-
-        const [isEditingIntro, setIsEditingIntro] = useState(false);
-        const [introText, setIntroText] = useState(currentUser.intro || '');
-        
-        const [isEditingFace, setIsEditingFace] = useState(false);
-        const [faceUrlText, setFaceUrlText] = useState(currentUser.faceUrl || '');
-
-        const toggleEquip = (itemId) => {
-          let newEquipped = [...equippedItems];
-          if (newEquipped.some(id => String(id) === String(itemId))) {
-            newEquipped = newEquipped.filter(id => String(id) !== String(itemId));
-            if(showToast) showToast('장착 해제!');
-          } else {
-            newEquipped.push(itemId);
-            if(showToast) showToast('장착 완료! ✨');
-          }
-          updateStudentData(currentUser.id, { equippedItems: newEquipped });
-        };
-
-        const selectTitle = (title) => {
-          updateStudentData(currentUser.id, { title: title });
-          if(showToast) showToast(`'${title}'(으)로 칭호 변경!`);
-        };
-
-        const saveIntro = () => {
-          updateStudentData(currentUser.id, { intro: introText });
-          setIsEditingIntro(false);
-          if(showToast) showToast('소개말 저장 완료!');
-        };
-
-        const saveFaceUrl = () => {
-          updateStudentData(currentUser.id, { faceUrl: faceUrlText });
-          setIsEditingFace(false);
-          if(showToast) showToast('얼굴 사진 변경 완료!');
-        };
-
-        const equippedIcons = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon || '');
-
-        return (
-          <div className="space-y-6">
-            <div className="bg-white/90 p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-orange-100 flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-orange-100 rounded-full blur-3xl opacity-50 -z-10 -translate-y-1/2 translate-x-1/2"></div>
-              
-              <div className="relative flex flex-col items-center">
-                <div className="relative w-40 h-40 bg-gradient-to-tr from-orange-50 to-sky-50 rounded-full flex items-center justify-center shadow-inner border-[6px] border-white shrink-0 overflow-hidden">
-                  {currentUser.faceUrl ? (
-                    <img src={currentUser.faceUrl} alt="내 얼굴" className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-6xl opacity-50 text-orange-400">👤</span>
-                  )}
-                  <div className="absolute inset-0 flex items-center justify-center drop-shadow-lg">
-                    {equippedIcons.map((icon, idx) => (
-                      isImageUrl(icon) ? <img key={idx} src={icon} alt="장착" className="absolute w-28 h-28 object-contain" /> : <span key={idx} className="absolute text-[5rem]">{safeText(icon)}</span>
-                    ))}
-                  </div>
-                </div>
-                
-                {!isEditingFace ? (
-                   <button onClick={() => setIsEditingFace(true)} className="mt-3 text-xs bg-white text-orange-600 font-bold px-3 py-1.5 rounded-full border border-orange-200 shadow-sm hover:bg-orange-50">사진 바꾸기 📷</button>
-                ) : (
-                  <div className="mt-3 flex flex-col gap-2 w-full max-w-[150px]">
-                    <input type="text" value={faceUrlText} onChange={e=>setFaceUrlText(e.target.value)} placeholder="이미지 URL 주소" className="text-xs p-2 border border-orange-200 rounded-xl outline-none" />
-                    <div className="flex gap-1 justify-center">
-                      <button onClick={() => setIsEditingFace(false)} className="text-[10px] bg-stone-100 px-3 py-1 rounded-lg font-bold text-stone-500">취소</button>
-                      <button onClick={saveFaceUrl} className="text-[10px] bg-orange-400 text-white px-3 py-1 rounded-lg font-bold">저장</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-              <div className="flex-1 w-full flex flex-col">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    {currentUser.title && <span className="bg-orange-100 text-orange-900 text-sm font-black px-4 py-1.5 rounded-full mb-2 inline-block shadow-sm">✨ {safeText(currentUser.title)}</span>}
-                    <h2 className="text-3xl font-black text-stone-800 mt-1">{safeText(currentUser.name)}</h2>
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <div className="flex items-center gap-1 text-amber-800 bg-amber-100 px-5 py-2.5 rounded-2xl font-black shadow-sm text-lg">🪙 {currentUser.money}원</div>
-                    <button onClick={onOpenPwdModal} className="text-[10px] bg-white border border-stone-200 text-stone-600 px-3 py-1.5 rounded-full font-bold shadow-sm hover:bg-stone-50 flex items-center gap-1">
-                      🔑 비밀번호 변경
-                    </button>
-                  </div>
-                </div>
-
-                <div className="bg-white/95 p-5 rounded-3xl mb-4 border border-sky-100 shadow-sm">
-                  <div className="flex justify-between font-black mb-3"><span className="text-sky-700 text-lg">Level {currentUser.level}</span> <span className="text-sky-500">{currentExp} / {EXP_PER_LEVEL}</span></div>
-                  <div className="h-5 bg-sky-50 rounded-full overflow-hidden shadow-inner border border-sky-100/50">
-                    <div className="h-full bg-gradient-to-r from-sky-400 to-blue-400 transition-all duration-1000 rounded-full" style={{ width: `${expPercent}%` }}></div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <div className="bg-orange-50/50 p-4 rounded-3xl border border-orange-100">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-sm font-black text-orange-800">💬 내 소개</span>
-                      {!isEditingIntro ? (
-                        <button onClick={() => setIsEditingIntro(true)} className="text-[10px] bg-white px-2 py-1 rounded-lg text-orange-700 font-bold shadow-sm border border-orange-100">수정</button>
-                      ) : (
-                        <div className="flex gap-1">
-                          <button onClick={() => setIsEditingIntro(false)} className="text-[10px] bg-white px-2 py-1 rounded-lg text-stone-500 border border-stone-200">취소</button>
-                          <button onClick={saveIntro} className="text-[10px] bg-orange-400 text-white px-2 py-1 rounded-lg font-bold">저장</button>
-                        </div>
-                      )}
-                    </div>
-                    {!isEditingIntro ? (
-                      <div className="text-sm font-bold text-stone-600 break-keep">{currentUser.intro || <span className="text-orange-400 font-medium">멋진 내 모습을 소개해보세요!</span>}</div>
-                    ) : (
-                      <input type="text" value={introText} onChange={e=>setIntroText(e.target.value)} maxLength={50} placeholder="최대 50자" className="w-full p-2 text-sm bg-white border border-orange-200 rounded-xl focus:ring-2 focus:ring-orange-300 font-bold outline-none text-stone-800" />
-                    )}
-                  </div>
-
-                  <div className="bg-sky-50/50 p-4 rounded-3xl border border-sky-100">
-                    <span className="text-sm font-black text-sky-800 block mb-2">🔑 아이모두 (i-modu)</span>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between bg-white px-3 py-2 rounded-xl shadow-sm border border-sky-50">
-                        <span className="text-xs font-bold text-stone-400">ID</span>
-                        <ColorizeText text={currentUser.imoduId} />
-                      </div>
-                      <div className="flex items-center justify-between bg-white px-3 py-2 rounded-xl shadow-sm border border-sky-50">
-                        <span className="text-xs font-bold text-stone-400">PW</span>
-                        <ColorizeText text={currentUser.imoduPwd} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white/90 p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-purple-100">
-              <h3 className="font-black text-xl mb-5 text-purple-900 flex items-center gap-2">✨ 나의 칭호함</h3>
-              {ownedTitles.length === 0 ? (
-                <div className="text-center py-8 bg-purple-50 rounded-3xl text-purple-400 font-bold">선생님께 멋진 칭호를 받아보세요!</div>
-              ) : (
-                <div className="flex flex-wrap gap-3">
-                  {ownedTitles.map((t, idx) => {
-                    const isEquipped = currentUser.title === t;
-                    return (
-                      <button 
-                        key={idx} onClick={() => selectTitle(t)} 
-                        className={`px-5 py-3 rounded-2xl font-black text-sm transition-all ${isEquipped ? 'bg-purple-500 text-white shadow-md transform -translate-y-1' : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-100'}`}
-                      >
-                        {t} {isEquipped && '✅'}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="bg-white/90 p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-pink-100">
-              <h3 className="font-black text-xl mb-5 text-pink-800 flex items-center gap-2">🎨 내 옷장</h3>
-              {ownedItems.length === 0 ? (
-                <div className="text-center py-10 bg-pink-50 rounded-3xl text-pink-400 font-bold">상점에서 예쁜 아이템을 모아보세요!</div>
-              ) : (
-                <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-4">
-                  {ownedItems.map((itemId, idx) => {
-                    const item = safeShopItems.find(i => String(i.id) === String(itemId));
-                    if(!item) return null;
-                    const isEquipped = equippedItems.some(id => String(id) === String(itemId));
-                    return (
-                      <button key={itemId || idx} onClick={() => toggleEquip(itemId)} className={`flex flex-col items-center p-4 rounded-3xl border-2 transition-all ${isEquipped ? 'border-pink-300 bg-pink-50 shadow-md' : 'border-white bg-stone-50 hover:border-pink-200'}`}>
-                        <div className="w-16 h-16 mb-3 flex items-center justify-center bg-white rounded-2xl border border-stone-100 shadow-sm">
-                          {isImageUrl(item.icon) ? <img src={item.icon} alt={item.name} className="w-full h-full object-contain p-2" /> : <span className="text-4xl">{safeText(item.icon)}</span>}
-                        </div>
-                        <span className="text-xs font-black text-stone-700 text-center break-keep">{safeText(item.name)}</span>
-                        {isEquipped && <span className="text-[10px] bg-pink-400 text-white px-3 py-1 rounded-full mt-2 font-bold shadow-sm">장착중</span>}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      }
-
-      function EmotionBoard({ currentUser, dbData, setDbData, syncToServer, showToast }) {
-        const moodZones = {
-          red: { id: 'red', name: '빨강 구역', btnColor: 'bg-rose-400 text-white shadow-md', itemColor: 'bg-rose-50 text-rose-800 border-rose-200', emotions: [{ emoji: '😡', label: '화나요' }, { emoji: '😫', label: '짜증나요' }, { emoji: '😤', label: '답답해요' }, { emoji: '😬', label: '긴장돼요' }, { emoji: '😥', label: '걱정돼요' }, { emoji: '😰', label: '불안해요' }, { emoji: '😱', label: '무서워요' }, { emoji: '😳', label: '당황' }, { emoji: '🥺', label: '억울해요' }] },
-          yellow: { id: 'yellow', name: '노랑 구역', btnColor: 'bg-amber-400 text-amber-900 shadow-md', itemColor: 'bg-amber-50 text-amber-900 border-amber-300', emotions: [{ emoji: '😆', label: '신나요' }, { emoji: '😀', label: '기뻐요' }, { emoji: '🥰', label: '행복해요' }, { emoji: '💓', label: '설레요' }, { emoji: '⚡', label: '활기차요' }, { emoji: '😲', label: '놀라워요' }, { emoji: '😎', label: '자랑스러워' }, { emoji: '💪', label: '자신있어요' }, { emoji: '🤩', label: '기대돼요' }] },
-          blue: { id: 'blue', name: '파랑 구역', btnColor: 'bg-blue-400 text-white shadow-md', itemColor: 'bg-blue-50 text-blue-900 border-blue-200', emotions: [{ emoji: '😢', label: '슬퍼요' }, { emoji: '🌧️', label: '우울해요' }, { emoji: '😞', label: '실망했어요' }, { emoji: '🚶', label: '외로워요' }, { emoji: '🥱', label: '피곤해요' }, { emoji: '😒', label: '지루해요' }, { emoji: '🫠', label: '무기력해요' }, { emoji: '😔', label: '속상해요' }, { emoji: '🫣', label: '부끄러워요' }] },
-          green: { id: 'green', name: '초록 구역', btnColor: 'bg-emerald-400 text-white shadow-md', itemColor: 'bg-emerald-50 text-emerald-900 border-emerald-200', emotions: [{ emoji: '😌', label: '편안해요' }, { emoji: '🍵', label: '차분해요' }, { emoji: '☁️', label: '여유로워요' }, { emoji: '😋', label: '만족해요' }, { emoji: '🤝', label: '다정해요' }, { emoji: '🙏', label: '감사해요' }, { emoji: '😮‍💨', label: '안심돼요' }, { emoji: '🐢', label: '느긋해요' }, { emoji: '🧸', label: '포근해요' }] }
-        };
-
-        const [selectedZone, setSelectedZone] = useState('yellow');
-        const [selectedEmotion, setSelectedEmotion] = useState('😀');
-        const [content, setContent] = useState('');
-        const [isSecret, setIsSecret] = useState(false);
-        const [postToDelete, setPostToDelete] = useState(null);
-        const [selectedStudentProfile, setSelectedStudentProfile] = useState(null);
-
-        const allEmotions = Object.values(moodZones).flatMap(zone => zone.emotions.map(e => ({ ...e, color: zone.itemColor })));
-
-        const handlePost = (e) => {
-          e.preventDefault();
-          if (!content) return;
-          const newPost = { 
-            id: Date.now().toString(), 
-            studentId: currentUser.id, 
-            studentName: currentUser.name, 
-            emotion: selectedEmotion, 
-            content, 
-            date: new Date().toISOString().split('T')[0], 
-            isSecret,
-            likes: []
-          };
-          setDbData(prev => ({ ...prev, Emotions: [newPost, ...(prev.Emotions || [])] }));
-          syncToServer('Emotions', 'INSERT', null, newPost);
-          setContent(''); setIsSecret(false);
-          showToast(isSecret ? '비밀 일기가 등록되었습니다. 🔒' : '오늘의 마음이 등록되었습니다. 🫧');
-        };
-
-        const executeDelete = () => {
-          if (!postToDelete) return;
-          setDbData(prev => ({ ...prev, Emotions: prev.Emotions.filter(post => post.id !== postToDelete) }));
-          syncToServer('Emotions', 'DELETE', postToDelete, null);
-          showToast('일기가 삭제되었습니다.');
-          setPostToDelete(null);
-        };
-
-        const handleLike = (postId) => {
-          const post = emotionsData.find(p => p.id === postId);
-          if(!post) return;
-          const likes = Array.isArray(post.likes) ? post.likes : [];
-          let newLikes;
-          if (likes.includes(currentUser.id)) {
-            newLikes = likes.filter(id => id !== currentUser.id);
-          } else {
-            newLikes = [...likes, currentUser.id];
-          }
-          setDbData(prev => ({
-            ...prev,
-            Emotions: prev.Emotions.map(p => p.id === postId ? { ...p, likes: newLikes } : p)
-          }));
-          syncToServer('Emotions', 'UPDATE', postId, { likes: newLikes });
-        };
-
-        const emotionsData = Array.isArray(dbData.Emotions) ? dbData.Emotions : [];
-        const currentZoneData = moodZones[selectedZone];
-        const todayString = new Date().toISOString().split('T')[0];
-        const hasPostedToday = emotionsData.some(post => post.studentId === currentUser.id && post.date === todayString);
-
-        // 오늘의 마음 통계
-        const todayEmotions = emotionsData.filter(p => p.date === todayString);
-        const emotionSummary = {};
-        todayEmotions.forEach(p => {
-          emotionSummary[p.emotion] = (emotionSummary[p.emotion] || 0) + 1;
-        });
-        const topEmotions = Object.entries(emotionSummary).sort((a,b) => b[1] - a[1]);
-
-        return (
-          <div className="space-y-8">
-            {topEmotions.length > 0 && (
-              <div className="bg-white/80 backdrop-blur-md p-5 rounded-[2rem] shadow-sm border border-cyan-100 mb-6 flex flex-wrap gap-3 items-center">
-                <span className="font-black text-cyan-800 mr-2">오늘 우리 반 기분 ☁️</span>
-                {topEmotions.map(([emoji, count]) => {
-                  const info = allEmotions.find(e => e.emoji === emoji);
-                  return <span key={emoji} className="bg-white px-3 py-1.5 rounded-full font-bold text-sm shadow-sm border border-stone-100 text-stone-700">{emoji} {info ? info.label : '기분'} {count}명</span>
-                })}
-              </div>
-            )}
-
-            {!hasPostedToday ? (
-              <form onSubmit={handlePost} className="bg-white/90 backdrop-blur-md p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-sky-100 space-y-6">
-                <h3 className="font-black text-2xl text-sky-900 flex items-center gap-2 mb-4">🫧 지금 내 마음은?</h3>
-                
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {Object.values(moodZones).map(zone => (
-                    <button key={zone.id} type="button" onClick={() => {setSelectedZone(zone.id); setSelectedEmotion(zone.emotions[0].emoji);}} className={`p-4 rounded-3xl font-black flex flex-col items-center justify-center transition-all ${selectedZone === zone.id ? zone.btnColor + ' transform -translate-y-1 scale-105 border-2 border-white' : 'bg-stone-50 text-stone-500 hover:bg-stone-100 border border-stone-200'}`}>
-                      <span className="text-xl">{zone.name}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className={`p-6 rounded-[2.5rem] border-[3px] bg-white ${currentZoneData.itemColor.split(' ')[2]}`}>
-                  <div className="grid grid-cols-3 gap-3">
-                    {currentZoneData.emotions.map(emo => (
-                      <button key={emo.label} type="button" onClick={() => setSelectedEmotion(emo.emoji)} className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${selectedEmotion === emo.emoji ? currentZoneData.itemColor + ' shadow-md scale-105' : 'bg-stone-50 border-stone-100 text-stone-400 grayscale hover:grayscale-0 hover:bg-white'}`}>
-                        <span className="text-4xl mb-2 drop-shadow-sm">{emo.emoji}</span>
-                        <span className="text-sm font-black">{emo.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                  
-                  <div className="mt-6 pt-6 border-t border-stone-100">
-                    <div className="relative">
-                      <textarea placeholder="무슨 일이 있었는지, 왜 그런 기분이 들었는지 편하게 이야기해주세요." value={content} onChange={e=>setContent(e.target.value)} rows="4" className="w-full bg-stone-50 border-2 border-stone-100 rounded-3xl px-6 py-5 focus:outline-none focus:ring-4 focus:ring-sky-100 focus:border-sky-300 font-bold text-stone-800 resize-none" required />
-                      <div className="absolute bottom-4 right-4 flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-sm border border-stone-200">
-                        <span className="text-xs font-black text-stone-600">🔒 비밀글</span>
-                        <button type="button" onClick={() => setIsSecret(!isSecret)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isSecret ? 'bg-sky-500' : 'bg-stone-300'}`}>
-                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isSecret ? 'translate-x-6' : 'translate-x-1'}`} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <button type="submit" className="w-full bg-sky-500 hover:bg-sky-600 text-white font-black py-5 rounded-2xl shadow-md transition-transform hover:-translate-y-1 text-xl mt-4 border border-sky-600">일기장에 기록하기</button>
-                </div>
-              </form>
-            ) : (
-              <div className="bg-sky-400 border-4 border-sky-200 text-white p-8 rounded-[2.5rem] shadow-sm flex flex-col items-center justify-center text-center gap-4 relative overflow-hidden">
-                <div className="absolute top-0 right-0 text-[10rem] opacity-20 transform translate-x-10 -translate-y-10">🫧</div>
-                <h3 className="font-black text-3xl z-10">기록 완료!</h3>
-                <p className="font-bold z-10 text-sky-50">오늘의 소중한 마음을 남겨주어 고마워요.</p>
-              </div>
-            )}
-            
-            <div className="space-y-5">
-              {emotionsData.length === 0 ? (
-                <div className="text-center py-16 text-sky-600 bg-white/50 rounded-[2.5rem] font-bold border border-sky-100">아직 등록된 일기가 없어요.</div>
-              ) : (
-                emotionsData.map(post => {
-                  const emotionInfo = allEmotions.find(e => e.emoji === post.emotion) || { label: '기분', color: 'bg-stone-100 border-stone-300 text-stone-700' };
-                  const postUser = dbData.Users.find(u => u.name === post.studentName);
-                  const postIsSecret = post.isSecret === true || String(post.isSecret).toLowerCase() === 'true';
-                  const canViewContent = currentUser.role === 'teacher' || post.studentId === currentUser.id;
-                  const postLikes = Array.isArray(post.likes) ? post.likes : [];
-                  const isLiked = postLikes.includes(currentUser.id);
-                  
-                  return (
-                    <div key={post.id} className="bg-white/95 backdrop-blur-sm p-6 rounded-[2rem] shadow-sm border border-stone-100 flex gap-5">
-                      <div className="flex-1">
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <button onClick={() => postUser && setSelectedStudentProfile(postUser)} className="font-black text-stone-800 text-xl hover:text-sky-500 transition-colors flex items-center gap-2">
-                              {safeText(post.studentName)}
-                            </button>
-                            <span className={`text-xs px-3 py-1.5 rounded-full font-black border-2 ${emotionInfo.color}`}>{post.emotion} {emotionInfo.label}</span>
-                            {postIsSecret && <span className="text-xs bg-stone-200 text-stone-700 px-3 py-1.5 rounded-full font-black border border-stone-300">🔒 비밀</span>}
-                          </div>
-                          {(currentUser.role === 'teacher' || post.studentId === currentUser.id) && (
-                            <div className="flex items-center gap-3">
-                              <span className="text-xs text-stone-400 font-bold">{safeText(post.date)}</span>
-                              <button onClick={() => setPostToDelete(post.id)} className="text-rose-400 hover:text-rose-600 font-bold text-xl bg-rose-50 p-2 rounded-xl">🗑️</button>
-                            </div>
-                          )}
-                        </div>
-                        
-                        <div className={`mt-3 text-base leading-relaxed p-5 rounded-2xl font-bold border ${postIsSecret ? (canViewContent ? 'bg-indigo-50 border-indigo-200 text-indigo-900' : 'bg-stone-100 border-stone-200 text-stone-500 italic') : 'bg-sky-50 border-sky-100 text-sky-900'}`}>
-                          {postIsSecret && !canViewContent ? '🤫 선생님께만 털어놓은 비밀 이야기예요.' : safeText(post.content)}
-                        </div>
-
-                        {(!postIsSecret || canViewContent) && (
-                          <div className="mt-3 flex justify-end">
-                            <button onClick={() => handleLike(post.id)} className={`flex items-center gap-1 text-sm font-bold px-3 py-1.5 rounded-full transition shadow-sm border ${isLiked ? 'bg-rose-50 text-rose-500 border-rose-100' : 'bg-white text-stone-400 border-stone-100 hover:bg-stone-50'}`}>
-                              {isLiked ? '❤️' : '🤍'} {postLikes.length > 0 && postLikes.length}
-                            </button>
-                          </div>
+                      <div className="flex justify-end mt-4">
+                        {isApproved ? (
+                          <div className="bg-emerald-100 text-emerald-700 font-black px-4 py-2 rounded-xl border border-emerald-200 shadow-sm">선생님 확인 완료! 🎉</div>
+                        ) : isSubmitted ? (
+                          <button onClick={() => requestCancelSubmit(task.id)} className="bg-stone-200 hover:bg-stone-300 text-stone-700 font-black px-5 py-3 rounded-xl transition shadow-sm">제출 취소</button>
+                        ) : (
+                          <button onClick={() => requestSubmit(task.id)} className="bg-indigo-500 hover:bg-indigo-600 text-white font-black px-5 py-3 rounded-xl transition shadow-md">다 했어요 ✋</button>
                         )}
                       </div>
                     </div>
                   )
                 })
               )}
-            </div>
 
-            {postToDelete && (
-              <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-                <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl text-center border-4 border-rose-200">
-                  <h3 className="font-black text-2xl text-rose-700 mb-2">🚨 삭제 확인</h3>
-                  <p className="text-stone-700 font-bold mb-8">정말 이 일기를 삭제할까요?</p>
-                  <div className="flex gap-4">
-                    <button onClick={() => setPostToDelete(null)} className="flex-1 bg-stone-200 text-stone-700 font-black py-4 rounded-2xl hover:bg-stone-300 transition">취소</button>
-                    <button onClick={executeDelete} className="flex-1 bg-rose-500 text-white font-black py-4 rounded-2xl shadow-md hover:bg-rose-600 transition">삭제</button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {selectedStudentProfile && <StudentProfileModal student={selectedStudentProfile} shopItems={dbData.ShopItems} onClose={() => setSelectedStudentProfile(null)} />}
-          </div>
-        );
-      }
-
-      function StudentProfileModal({ student, shopItems, onClose }) {
-        if (!student) return null;
-        const currentExp = student.exp % EXP_PER_LEVEL;
-        const expPercent = (currentExp / EXP_PER_LEVEL) * 100;
-        const equippedItems = Array.isArray(student.equippedItems) ? student.equippedItems : [];
-        const safeShopItems = Array.isArray(shopItems) ? shopItems : [];
-        const equippedIcons = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon).filter(Boolean);
-
-        return (
-          <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={onClose}>
-            <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl relative overflow-hidden border-4 border-orange-200" onClick={e => e.stopPropagation()}>
-              <div className="absolute top-0 right-0 w-40 h-40 bg-orange-100 rounded-full blur-3xl opacity-50 -z-10 -translate-y-1/2 translate-x-1/2"></div>
-              
-              <button onClick={onClose} className="absolute top-5 right-5 text-stone-400 hover:text-stone-700 bg-stone-100 p-2 rounded-full font-black">✕</button>
-
-              <div className="flex flex-col items-center gap-4 mb-6 mt-4">
-                <div className="relative w-32 h-32 bg-orange-50 rounded-full flex items-center justify-center shadow-inner border-[6px] border-white overflow-hidden">
-                   {student.faceUrl ? (
-                     <img src={student.faceUrl} alt="프로필" className="w-full h-full object-cover" />
-                   ) : (
-                     <span className="text-5xl opacity-50 text-orange-400">👤</span>
-                   )}
-                   <div className="absolute inset-0 flex items-center justify-center drop-shadow-md">
-                     {equippedIcons.map((icon, idx) => (
-                       isImageUrl(icon) ? <img key={idx} src={icon} alt="장착" className="absolute w-24 h-24 object-contain" /> : <span key={idx} className="absolute text-[4rem]">{safeText(icon)}</span>
-                     ))}
-                   </div>
-                </div>
-                
-                <div className="text-center">
-                  {student.title && <span className="bg-orange-100 text-orange-900 text-xs font-black px-4 py-1.5 rounded-full mb-2 inline-block shadow-sm border border-orange-200">✨ {safeText(student.title)}</span>}
-                  <div className="text-3xl font-black text-stone-800">{safeText(student.name)}</div>
-                </div>
-              </div>
-
-              <div className="bg-sky-50/80 p-5 rounded-3xl border border-sky-100 mb-6 text-center shadow-sm">
-                <span className="text-xs font-black text-sky-600 block mb-2">💬 한 줄 소개</span>
-                <div className="text-sm font-bold text-stone-700 break-keep">
-                  {student.intro || <span className="text-sky-400">아직 소개를 작성하지 않았어요.</span>}
-                </div>
-              </div>
-
-              <div className="space-y-3 bg-stone-50 p-5 rounded-3xl border border-stone-100">
-                <div className="flex justify-between items-center bg-white p-3 rounded-2xl shadow-sm border border-stone-50">
-                  <span className="text-sm font-black text-stone-500">가진 돈</span>
-                  <span className="font-black text-amber-600 text-lg">🪙 {student.money}원</span>
-                </div>
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-stone-50">
-                  <div className="flex justify-between font-black mb-2"><span className="text-sky-600 text-sm">Level {student.level}</span> <span className="text-sky-400 text-xs">{currentExp} / {EXP_PER_LEVEL}</span></div>
-                  <div className="h-3 bg-sky-100 rounded-full overflow-hidden shadow-inner"><div className="h-full bg-sky-400" style={{ width: `${expPercent}%` }}></div></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      }
-
-      function HallOfFameManager({ currentUser, dbData, setDbData, syncToServer, showToast }) {
-        const [category, setCategory] = useState('');
-        const [studentName, setStudentName] = useState('');
-        const [description, setDescription] = useState('');
-
-        const handlePost = (e) => {
-          e.preventDefault();
-          if (!category || !studentName || !description) return;
-          const newPost = { id: Date.now().toString(), category, studentName, description, date: new Date().toISOString().split('T')[0] };
-          setDbData(prev => ({ ...prev, HallOfFame: [newPost, ...(prev.HallOfFame || [])] }));
-          syncToServer('HallOfFame', 'INSERT', null, newPost);
-          setCategory(''); setStudentName(''); setDescription('');
-          showToast('명예의 전당에 등록되었습니다! 🏆');
-        };
-
-        const executeDelete = (id) => {
-          setDbData(prev => ({ ...prev, HallOfFame: prev.HallOfFame.filter(p => p.id !== id) }));
-          syncToServer('HallOfFame', 'DELETE', id, null);
-          showToast('기록이 삭제되었습니다.');
-        };
-
-        const records = Array.isArray(dbData.HallOfFame) ? dbData.HallOfFame : [];
-
-        return (
-          <div className="space-y-8">
-            <div className="bg-amber-100 p-8 rounded-[2.5rem] shadow-sm text-amber-900 relative overflow-hidden border border-amber-200">
-              <div className="absolute -right-4 -bottom-4 text-[8rem] opacity-30">🏆</div>
-              <h2 className="text-3xl font-black mb-2 relative z-10">명예의 전당</h2>
-              <p className="font-bold opacity-90 relative z-10">파도반을 빛낸 멋진 친구들을 기념하는 곳입니다!</p>
-            </div>
-
-            {currentUser.role === 'teacher' && (
-              <form onSubmit={handlePost} className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-amber-200 space-y-4">
-                <h3 className="font-black text-lg text-amber-900">🎖️ 새로운 기록 등록</h3>
-                <div className="flex gap-4">
-                  <input type="text" placeholder="분야 (예: 독서왕)" value={category} onChange={e=>setCategory(e.target.value)} className="w-1/3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-300 font-bold text-stone-800" required />
-                  <input type="text" placeholder="학생 이름" value={studentName} onChange={e=>setStudentName(e.target.value)} className="w-2/3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-300 font-bold text-stone-800" required />
-                </div>
-                <textarea placeholder="선정 이유 및 멋진 활약을 적어주세요." value={description} onChange={e=>setDescription(e.target.value)} rows="2" className="w-full bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-300 font-bold resize-none text-stone-800" required />
-                <button type="submit" className="w-full bg-amber-400 text-amber-900 font-black py-4 rounded-xl shadow-md hover:bg-amber-500 transition border border-amber-500">전당에 올리기 🏆</button>
-              </form>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {records.length === 0 ? (
-                <div className="col-span-full text-center py-10 text-amber-700 bg-white/50 border border-amber-100 rounded-[2rem] font-black">아직 등록된 기록이 없습니다.</div>
-              ) : (
-                records.map(record => (
-                  <div key={record.id} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-amber-200 flex flex-col justify-between relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-amber-50 rounded-bl-[100px] -z-10 transition-transform group-hover:scale-110"></div>
-                    <div>
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <span className="bg-amber-200 border border-amber-300 text-amber-900 text-xs font-black px-3 py-1 rounded-full">{safeText(record.category)}</span>
-                          <h4 className="font-black text-2xl text-slate-900 mt-2">{safeText(record.studentName)}</h4>
-                        </div>
-                        {currentUser.role === 'teacher' && (
-                          <button onClick={() => executeDelete(record.id)} className="text-rose-400 hover:text-rose-600 font-black text-xl bg-rose-50 p-2 rounded-full">✕</button>
-                        )}
-                      </div>
-                      <p className="text-slate-700 font-bold text-sm leading-relaxed mb-4">{safeText(record.description)}</p>
+              {confirmAction && (
+                <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+                  <div className="bg-white rounded-[2rem] p-6 max-w-xs w-full shadow-2xl text-center border-4 border-stone-100">
+                    <h3 className="font-black text-xl text-stone-800 mb-2">{confirmAction.title}</h3>
+                    <p className="text-stone-600 font-bold mb-6 text-sm whitespace-pre-wrap">{confirmAction.message}</p>
+                    <div className="flex gap-3">
+                      <button onClick={() => setConfirmAction(null)} className="flex-1 bg-stone-100 text-stone-600 font-black py-3 rounded-xl hover:bg-stone-200">아니오</button>
+                      <button onClick={() => { confirmAction.onConfirm(); setConfirmAction(null); }} className="flex-1 bg-indigo-500 text-white font-black py-3 rounded-xl shadow-md hover:bg-indigo-600">예</button>
                     </div>
-                    <div className="text-xs text-slate-500 font-bold text-right border-t border-slate-100 pt-3">{safeText(record.date)} 기록</div>
                   </div>
-                ))
+                </div>
               )}
             </div>
-          </div>
-        );
-      }
+          );
+        }
 
-      function AnnouncementManager({ currentUser, dbData, setDbData, syncToServer, showToast }) {
-        const [title, setTitle] = useState('');
-        const [content, setContent] = useState('');
-        const [link, setLink] = useState('');
+        function StudentDashboard({ currentUser, dbData, setDbData, updateStudentData, syncToServer, showToast, onOpenPwdModal }) {
+          const [activeTab, setActiveTab] = useState('profile');
+          
+          const tasks = Array.isArray(dbData.Tasks) ? dbData.Tasks : [];
+          const unsubmittedTasksCount = tasks.filter(t => {
+            const isSubmitted = (t.submittedUsers || []).includes(currentUser.id);
+            const isApproved = (t.approvedUsers || []).includes(currentUser.id);
+            return !isSubmitted && !isApproved;
+          }).length;
 
-        const handlePost = (e) => {
-          e.preventDefault();
-          if (!title || !content) return;
-          const newPost = { id: Date.now().toString(), title, content, link, date: new Date().toISOString().split('T')[0], authorName: currentUser.name };
-          setDbData(prev => ({ ...prev, Announcements: [newPost, ...prev.Announcements] }));
-          syncToServer('Announcements', 'INSERT', null, newPost);
-          setTitle(''); setContent(''); setLink('');
-          showToast('알림장이 등록되었습니다. 📢');
-        };
+          const navItems = [
+            { id: 'profile', label: '내 정보', icon: '🐳' },
+            { id: 'tasks', label: '할 일', icon: '📝', badge: unsubmittedTasksCount },
+            { id: 'emotions', label: '마음 일기', icon: '🫧' },
+            { id: 'halloffame', label: '명예의 전당', icon: '🏆' },
+            { id: 'announcements', label: '알림장', icon: '📢' },
+            { id: 'shop', label: '상점', icon: '🛍️' },
+          ];
 
-        return (
-          <div className="space-y-6">
-            {currentUser.role === 'teacher' && (
-              <form onSubmit={handlePost} className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-sky-100 space-y-4">
-                <input type="text" placeholder="제목" value={title} onChange={e=>setTitle(e.target.value)} className="w-full bg-white border border-sky-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-sky-200 font-bold text-stone-800" required />
-                <textarea placeholder="내용" value={content} onChange={e=>setContent(e.target.value)} rows="3" className="w-full bg-white border border-sky-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-sky-200 font-bold resize-none text-stone-800" required />
-                <input type="url" placeholder="첨부 링크 (https://...)" value={link} onChange={e=>setLink(e.target.value)} className="w-full bg-white border border-sky-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-sky-200 font-bold text-stone-800" />
-                <button type="submit" className="w-full bg-sky-400 hover:bg-sky-500 text-white font-black py-4 rounded-xl shadow-md transition border border-sky-500">알림장 쓰기</button>
-              </form>
-            )}
-            <div className="space-y-4">
-              {dbData.Announcements.length === 0 && <div className="text-center py-10 text-sky-600 font-black bg-white/50 border border-sky-100 rounded-[2rem]">등록된 알림장이 없습니다.</div>}
-              {dbData.Announcements.map(ann => (
-                <div key={ann.id} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-sky-100">
-                  <h4 className="font-black text-xl text-sky-900 mb-1">{safeText(ann.title)}</h4>
-                  <span className="text-xs text-sky-500 font-bold mb-4 block">{safeText(ann.date)}</span>
-                  <p className="text-stone-700 font-bold leading-relaxed whitespace-pre-wrap">{safeText(ann.content)}</p>
-                  {ann.link && <a href={ann.link} target="_blank" rel="noreferrer" className="inline-block mt-4 bg-sky-50 border border-sky-100 text-sky-700 px-4 py-2 rounded-xl font-black text-sm hover:bg-sky-100 transition">🔗 링크 열기</a>}
+          return (
+            <div className="space-y-6">
+              <div className="hidden md:flex bg-white/90 backdrop-blur-sm rounded-[2rem] shadow-sm p-3 gap-3 mb-6 border border-orange-100">
+                {navItems.map(item => (
+                  <button key={item.id} onClick={() => setActiveTab(item.id)} className={`relative flex-1 flex flex-col items-center justify-center gap-1 py-3 px-2 rounded-[1.5rem] font-black transition-all ${activeTab === item.id ? 'bg-orange-400 text-white shadow-md transform -translate-y-1' : 'text-stone-600 hover:bg-orange-50'}`}>
+                    <span className="text-2xl">{item.icon}</span>
+                    <span className="text-sm">{item.label}</span>
+                    {item.badge > 0 && <span className="absolute top-1 right-2 bg-rose-500 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full shadow-sm animate-pulse">{item.badge}</span>}
+                  </button>
+                ))}
+              </div>
+
+              {activeTab === 'profile' && <StudentProfile currentUser={currentUser} shopItems={dbData.ShopItems} updateStudentData={updateStudentData} showToast={showToast} onOpenPwdModal={onOpenPwdModal} />}
+              {activeTab === 'tasks' && <TaskManagerStudent currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+              {activeTab === 'emotions' && <EmotionBoard currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+              {activeTab === 'shop' && <Shop currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
+              {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+              {activeTab === 'announcements' && (
+                <div className="space-y-4">
+                  <h2 className="font-black text-2xl pl-2 flex items-center gap-2 text-sky-800">📢 선생님 알림장</h2>
+                  <AnnouncementManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />
                 </div>
-              ))}
+              )}
+
+              <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-orange-100 pb-safe z-50 md:hidden flex justify-around p-3 rounded-t-[2rem] shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
+                {navItems.map(item => (
+                  <button key={item.id} onClick={() => setActiveTab(item.id)} className={`relative flex flex-col items-center p-2 w-full transition-transform ${activeTab === item.id ? 'text-orange-500 scale-110' : 'text-stone-400 hover:text-orange-400'}`}>
+                    <span className="text-2xl mb-1">{item.icon}</span>
+                    <span className="text-[10px] font-black">{item.label}</span>
+                    {item.badge > 0 && <span className="absolute top-0 right-1 bg-rose-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full shadow-sm animate-pulse">{item.badge}</span>}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        );
-      }
+          );
+        }
 
-      function Shop({ currentUser, dbData, setDbData, updateStudentData, syncToServer, showToast }) {
-        const [showUpload, setShowUpload] = useState(false);
-        const [newItemName, setNewItemName] = useState('');
-        const [newItemIcon, setNewItemIcon] = useState('🍎');
-        const shopItems = Array.isArray(dbData.ShopItems) ? dbData.ShopItems : [];
-        const ownedItems = Array.isArray(currentUser.ownedItems) ? currentUser.ownedItems : [];
+        function StudentProfile({ currentUser, shopItems, updateStudentData, showToast, onOpenPwdModal }) {
+          const currentExp = currentUser.exp % EXP_PER_LEVEL;
+          const expPercent = (currentExp / EXP_PER_LEVEL) * 100;
 
-        const handleBuy = (item) => {
-          if (ownedItems.some(id => String(id) === String(item.id))) return showToast('이미 가진 아이템이에요!');
-          if (currentUser.money < item.price) return showToast('돈이 부족해요!');
-          updateStudentData(currentUser.id, { money: currentUser.money - item.price, ownedItems: [...ownedItems, item.id] });
-          showToast(`${item.name} 구매 완료! 🛍️`);
-        };
+          const equippedItems = Array.isArray(currentUser.equippedItems) ? currentUser.equippedItems : [];
+          const ownedItems = Array.isArray(currentUser.ownedItems) ? currentUser.ownedItems : [];
+          const ownedTitles = Array.isArray(currentUser.ownedTitles) ? currentUser.ownedTitles : [];
+          const safeShopItems = Array.isArray(shopItems) ? shopItems : [];
 
-        const handleUploadSubmit = (e) => {
-          e.preventDefault();
-          if(!newItemName) return;
-          const newPending = { id: Date.now().toString(), studentName: currentUser.name, itemName: newItemName, icon: newItemIcon, type: 'head' };
-          setDbData(prev => ({ ...prev, PendingItems: [...(prev.PendingItems || []), newPending] }));
-          syncToServer('PendingItems', 'INSERT', null, newPending);
-          setShowUpload(false); setNewItemName(''); setNewItemIcon('🍎');
-          showToast('선생님께 제안을 보냈어요!');
-        };
+          const [isEditingIntro, setIsEditingIntro] = useState(false);
+          const [introText, setIntroText] = useState(currentUser.intro || '');
+          
+          const [isEditingFace, setIsEditingFace] = useState(false);
+          const [faceUrlText, setFaceUrlText] = useState(currentUser.faceUrl || '');
 
-        return (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center bg-white/90 p-5 rounded-[2rem] border border-amber-200 shadow-sm">
-              <div className="font-black text-amber-900 text-lg">내 지갑</div>
-              <div className="text-2xl font-black text-amber-700 bg-amber-100 border border-amber-300 px-4 py-2 rounded-2xl">🪙 {currentUser.money}</div>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {shopItems.map((item, idx) => {
-                if (!item || !item.id) return null;
-                const isOwned = ownedItems.some(id => String(id) === String(item.id));
-                return (
-                  <div key={item.id || idx} className="bg-white/95 rounded-[2rem] p-5 shadow-sm border border-stone-200 text-center flex flex-col hover:border-sky-300 transition-colors">
-                    <div className="w-20 h-20 mb-4 mx-auto flex items-center justify-center bg-stone-100 rounded-3xl border border-stone-200 shadow-inner">
-                      {isImageUrl(item.icon) ? <img src={item.icon} alt={item.name} className="w-full h-full object-contain p-2" /> : <span className="text-5xl drop-shadow-md">{safeText(item.icon)}</span>}
+          const toggleEquip = (itemId) => {
+            let newEquipped = [...equippedItems];
+            if (newEquipped.some(id => String(id) === String(itemId))) {
+              newEquipped = newEquipped.filter(id => String(id) !== String(itemId));
+              if(showToast) showToast('장착 해제!');
+            } else {
+              newEquipped.push(itemId);
+              if(showToast) showToast('장착 완료! ✨');
+            }
+            updateStudentData(currentUser.id, { equippedItems: newEquipped });
+          };
+
+          const selectTitle = (title) => {
+            updateStudentData(currentUser.id, { title: title });
+            if(showToast) showToast(`'${title}'(으)로 칭호 변경!`);
+          };
+
+          const saveIntro = () => {
+            updateStudentData(currentUser.id, { intro: introText });
+            setIsEditingIntro(false);
+            if(showToast) showToast('소개말 저장 완료!');
+          };
+
+          const saveFaceUrl = () => {
+            updateStudentData(currentUser.id, { faceUrl: faceUrlText });
+            setIsEditingFace(false);
+            if(showToast) showToast('얼굴 사진 변경 완료!');
+          };
+
+          const equippedIcons = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon || '');
+
+          return (
+            <div className="space-y-6">
+              <div className="bg-white/90 p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-orange-100 flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-orange-100 rounded-full blur-3xl opacity-50 -z-10 -translate-y-1/2 translate-x-1/2"></div>
+                
+                <div className="relative flex flex-col items-center">
+                  <div className="relative w-40 h-40 bg-gradient-to-tr from-orange-50 to-sky-50 rounded-full flex items-center justify-center shadow-inner border-[6px] border-white shrink-0 overflow-hidden">
+                    {currentUser.faceUrl ? (
+                      <img src={currentUser.faceUrl} alt="내 얼굴" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-6xl opacity-50 text-orange-400">👤</span>
+                    )}
+                    <div className="absolute inset-0 flex items-center justify-center drop-shadow-lg">
+                      {equippedIcons.map((icon, idx) => (
+                        isImageUrl(icon) ? <img key={idx} src={icon} alt="장착" className="absolute w-28 h-28 object-contain" /> : <span key={idx} className="absolute text-[5rem]">{safeText(icon)}</span>
+                      ))}
                     </div>
-                    <div className="font-black text-slate-800 mb-1">{safeText(item.name)}</div>
-                    <div className="text-sky-700 font-black mb-4">{item.price} 원</div>
-                    <div className="mt-auto">
-                      <button onClick={() => handleBuy(item)} disabled={isOwned} className={`w-full py-3 rounded-xl text-sm font-black transition-all ${isOwned ? 'bg-slate-200 text-slate-500 border border-slate-300' : 'bg-sky-400 text-white border border-sky-500 shadow-md hover:bg-sky-500 hover:-translate-y-1'}`}>
-                        {isOwned ? '보유중' : '구매하기'}
+                  </div>
+                  
+                  {!isEditingFace ? (
+                     <button onClick={() => setIsEditingFace(true)} className="mt-3 text-xs bg-white text-orange-600 font-bold px-3 py-1.5 rounded-full border border-orange-200 shadow-sm hover:bg-orange-50">사진 바꾸기 📷</button>
+                  ) : (
+                    <div className="mt-3 flex flex-col gap-2 w-full max-w-[150px]">
+                      <input type="text" value={faceUrlText} onChange={e=>setFaceUrlText(e.target.value)} placeholder="이미지 URL 주소" className="text-xs p-2 border border-orange-200 rounded-xl outline-none" />
+                      <div className="flex gap-1 justify-center">
+                        <button onClick={() => setIsEditingFace(false)} className="text-[10px] bg-stone-100 px-3 py-1 rounded-lg font-bold text-stone-500">취소</button>
+                        <button onClick={saveFaceUrl} className="text-[10px] bg-orange-400 text-white px-3 py-1 rounded-lg font-bold">저장</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex-1 w-full flex flex-col">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      {currentUser.title && <span className="bg-orange-100 text-orange-900 text-sm font-black px-4 py-1.5 rounded-full mb-2 inline-block shadow-sm">✨ {safeText(currentUser.title)}</span>}
+                      <h2 className="text-3xl font-black text-stone-800 mt-1">{safeText(currentUser.name)}</h2>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <div className="flex items-center gap-1 text-amber-800 bg-amber-100 px-5 py-2.5 rounded-2xl font-black shadow-sm text-lg">🪙 {currentUser.money}원</div>
+                      <button onClick={onOpenPwdModal} className="text-[10px] bg-white border border-stone-200 text-stone-600 px-3 py-1.5 rounded-full font-bold shadow-sm hover:bg-stone-50 flex items-center gap-1">
+                        🔑 비밀번호 변경
                       </button>
                     </div>
                   </div>
-                )
-              })}
-            </div>
-            <div className="mt-8">
-              <button onClick={() => setShowUpload(!showUpload)} className="w-full bg-white/90 text-sky-800 font-black py-5 rounded-[2rem] shadow-sm border border-sky-300 hover:bg-sky-50 transition">
-                📤 아이템 제안하기
-              </button>
-              {showUpload && (
-                <form onSubmit={handleUploadSubmit} className="mt-4 bg-white/95 p-6 rounded-[2rem] shadow-sm border border-sky-200 space-y-4">
-                  <div className="flex gap-4">
-                    <input type="text" value={newItemIcon} onChange={e=>setNewItemIcon(e.target.value)} className="w-1/4 text-center text-2xl p-3 bg-white border border-sky-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sky-400 font-bold" placeholder="이모지/URL" required />
-                    <input type="text" value={newItemName} onChange={e=>setNewItemName(e.target.value)} className="w-3/4 p-3 bg-white border border-sky-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sky-400 font-bold text-stone-800" placeholder="아이템 이름" required />
-                  </div>
-                  <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 border border-sky-700 text-white font-black py-4 rounded-xl shadow-md transition">선생님께 보내기</button>
-                </form>
-              )}
-            </div>
-          </div>
-        );
-      }
 
-      function ApprovalManager({ dbData, setDbData, syncToServer, showToast }) {
-        const handleApprove = (item) => {
-          const newItem = { id: Date.now().toString(), name: item.itemName, icon: item.icon, price: 500, type: item.type };
-          setDbData(prev => ({ ...prev, ShopItems: [...prev.ShopItems, newItem], PendingItems: prev.PendingItems.filter(i => i.id !== item.id) }));
-          syncToServer('ShopItems', 'INSERT', null, newItem); syncToServer('PendingItems', 'DELETE', item.id, null);
-          showToast('승인 완료!');
-        };
-        const handleReject = (id) => {
-          setDbData(prev => ({ ...prev, PendingItems: prev.PendingItems.filter(i => i.id !== id) }));
-          syncToServer('PendingItems', 'DELETE', id, null);
-          showToast('거절 완료.');
-        };
-        if (dbData.PendingItems.length === 0) return <div className="text-center py-10 text-sky-700 bg-white/50 border border-sky-100 font-black rounded-[2rem]">대기중인 아이템이 없습니다.</div>;
-        return (
-          <div className="space-y-4">
-            {dbData.PendingItems.map(item => (
-              <div key={item.id} className="bg-white/95 p-5 rounded-[2rem] shadow-sm border border-sky-200 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="bg-stone-50 w-16 h-16 rounded-2xl flex items-center justify-center border border-stone-200">
-                    {isImageUrl(item.icon) ? <img src={item.icon} alt={item.itemName} className="w-full h-full object-contain p-1" /> : <span className="text-4xl">{safeText(item.icon)}</span>}
+                  <div className="bg-white/95 p-5 rounded-3xl mb-4 border border-sky-100 shadow-sm">
+                    <div className="flex justify-between font-black mb-3"><span className="text-sky-700 text-lg">Level {currentUser.level}</span> <span className="text-sky-500">{currentExp} / {EXP_PER_LEVEL}</span></div>
+                    <div className="h-5 bg-sky-50 rounded-full overflow-hidden shadow-inner border border-sky-100/50">
+                      <div className="h-full bg-gradient-to-r from-sky-400 to-blue-400 transition-all duration-1000 rounded-full" style={{ width: `${expPercent}%` }}></div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-xs font-bold text-sky-600 mb-1">{safeText(item.studentName)}의 제안</div>
-                    <div className="font-black text-lg text-stone-900">{safeText(item.itemName)}</div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="bg-orange-50/50 p-4 rounded-3xl border border-orange-100">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-black text-orange-800">💬 내 소개</span>
+                        {!isEditingIntro ? (
+                          <button onClick={() => setIsEditingIntro(true)} className="text-[10px] bg-white px-2 py-1 rounded-lg text-orange-700 font-bold shadow-sm border border-orange-100">수정</button>
+                        ) : (
+                          <div className="flex gap-1">
+                            <button onClick={() => setIsEditingIntro(false)} className="text-[10px] bg-white px-2 py-1 rounded-lg text-stone-500 border border-stone-200">취소</button>
+                            <button onClick={saveIntro} className="text-[10px] bg-orange-400 text-white px-2 py-1 rounded-lg font-bold">저장</button>
+                          </div>
+                        )}
+                      </div>
+                      {!isEditingIntro ? (
+                        <div className="text-sm font-bold text-stone-600 break-keep">{currentUser.intro || <span className="text-orange-400 font-medium">멋진 내 모습을 소개해보세요!</span>}</div>
+                      ) : (
+                        <input type="text" value={introText} onChange={e=>setIntroText(e.target.value)} maxLength={50} placeholder="최대 50자" className="w-full p-2 text-sm bg-white border border-orange-200 rounded-xl focus:ring-2 focus:ring-orange-300 font-bold outline-none text-stone-800" />
+                      )}
+                    </div>
+
+                    <div className="bg-sky-50/50 p-4 rounded-3xl border border-sky-100">
+                      <span className="text-sm font-black text-sky-800 block mb-2">🔑 아이모두 (i-modu)</span>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between bg-white px-3 py-2 rounded-xl shadow-sm border border-sky-50">
+                          <span className="text-xs font-bold text-stone-400">ID</span>
+                          <ColorizeText text={currentUser.imoduId} />
+                        </div>
+                        <div className="flex items-center justify-between bg-white px-3 py-2 rounded-xl shadow-sm border border-sky-50">
+                          <span className="text-xs font-bold text-stone-400">PW</span>
+                          <ColorizeText text={currentUser.imoduPwd} />
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => handleApprove(item)} className="bg-emerald-400 text-white border border-emerald-500 px-4 py-3 rounded-xl font-black shadow-sm hover:bg-emerald-500 transition">승인</button>
-                  <button onClick={() => handleReject(item.id)} className="bg-rose-400 text-white border border-rose-500 px-4 py-3 rounded-xl font-black shadow-sm hover:bg-rose-500 transition">거절</button>
                 </div>
               </div>
-            ))}
-          </div>
-        );
-      }
+
+              <div className="bg-white/90 p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-purple-100">
+                <h3 className="font-black text-xl mb-5 text-purple-900 flex items-center gap-2">✨ 나의 칭호함</h3>
+                {ownedTitles.length === 0 ? (
+                  <div className="text-center py-8 bg-purple-50 rounded-3xl text-purple-400 font-bold">선생님께 멋진 칭호를 받아보세요!</div>
+                ) : (
+                  <div className="flex flex-wrap gap-3">
+                    {ownedTitles.map((t, idx) => {
+                      const isEquipped = currentUser.title === t;
+                      return (
+                        <button 
+                          key={idx} onClick={() => selectTitle(t)} 
+                          className={`px-5 py-3 rounded-2xl font-black text-sm transition-all ${isEquipped ? 'bg-purple-500 text-white shadow-md transform -translate-y-1' : 'bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-100'}`}
+                        >
+                          {t} {isEquipped && '✅'}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-white/90 p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-pink-100">
+                <h3 className="font-black text-xl mb-5 text-pink-800 flex items-center gap-2">🎨 내 옷장</h3>
+                {ownedItems.length === 0 ? (
+                  <div className="text-center py-10 bg-pink-50 rounded-3xl text-pink-400 font-bold">상점에서 예쁜 아이템을 모아보세요!</div>
+                ) : (
+                  <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-4">
+                    {ownedItems.map((itemId, idx) => {
+                      const item = safeShopItems.find(i => String(i.id) === String(itemId));
+                      if(!item) return null;
+                      const isEquipped = equippedItems.some(id => String(id) === String(itemId));
+                      return (
+                        <button key={itemId || idx} onClick={() => toggleEquip(itemId)} className={`flex flex-col items-center p-4 rounded-3xl border-2 transition-all ${isEquipped ? 'border-pink-300 bg-pink-50 shadow-md' : 'border-white bg-stone-50 hover:border-pink-200'}`}>
+                          <div className="w-16 h-16 mb-3 flex items-center justify-center bg-white rounded-2xl border border-stone-100 shadow-sm">
+                            {isImageUrl(item.icon) ? <img src={item.icon} alt={item.name} className="w-full h-full object-contain p-2" /> : <span className="text-4xl">{safeText(item.icon)}</span>}
+                          </div>
+                          <span className="text-xs font-black text-stone-700 text-center break-keep">{safeText(item.name)}</span>
+                          {isEquipped && <span className="text-[10px] bg-pink-400 text-white px-3 py-1 rounded-full mt-2 font-bold shadow-sm">장착중</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        function EmotionBoard({ currentUser, dbData, setDbData, syncToServer, showToast }) {
+          const moodZones = {
+            red: { id: 'red', name: '빨강 구역', btnColor: 'bg-rose-400 text-white shadow-md', itemColor: 'bg-rose-50 text-rose-800 border-rose-200', emotions: [{ emoji: '😡', label: '화나요' }, { emoji: '😫', label: '짜증나요' }, { emoji: '😤', label: '답답해요' }, { emoji: '😬', label: '긴장돼요' }, { emoji: '😥', label: '걱정돼요' }, { emoji: '😰', label: '불안해요' }, { emoji: '😱', label: '무서워요' }, { emoji: '😳', label: '당황' }, { emoji: '🥺', label: '억울해요' }] },
+            yellow: { id: 'yellow', name: '노랑 구역', btnColor: 'bg-amber-400 text-amber-900 shadow-md', itemColor: 'bg-amber-50 text-amber-900 border-amber-300', emotions: [{ emoji: '😆', label: '신나요' }, { emoji: '😀', label: '기뻐요' }, { emoji: '🥰', label: '행복해요' }, { emoji: '💓', label: '설레요' }, { emoji: '⚡', label: '활기차요' }, { emoji: '😲', label: '놀라워요' }, { emoji: '😎', label: '자랑스러워' }, { emoji: '💪', label: '자신있어요' }, { emoji: '🤩', label: '기대돼요' }] },
+            blue: { id: 'blue', name: '파랑 구역', btnColor: 'bg-blue-400 text-white shadow-md', itemColor: 'bg-blue-50 text-blue-900 border-blue-200', emotions: [{ emoji: '😢', label: '슬퍼요' }, { emoji: '🌧️', label: '우울해요' }, { emoji: '😞', label: '실망했어요' }, { emoji: '🚶', label: '외로워요' }, { emoji: '🥱', label: '피곤해요' }, { emoji: '😒', label: '지루해요' }, { emoji: '🫠', label: '무기력해요' }, { emoji: '😔', label: '속상해요' }, { emoji: '🫣', label: '부끄러워요' }] },
+            green: { id: 'green', name: '초록 구역', btnColor: 'bg-emerald-400 text-white shadow-md', itemColor: 'bg-emerald-50 text-emerald-900 border-emerald-200', emotions: [{ emoji: '😌', label: '편안해요' }, { emoji: '🍵', label: '차분해요' }, { emoji: '☁️', label: '여유로워요' }, { emoji: '😋', label: '만족해요' }, { emoji: '🤝', label: '다정해요' }, { emoji: '🙏', label: '감사해요' }, { emoji: '😮‍💨', label: '안심돼요' }, { emoji: '🐢', label: '느긋해요' }, { emoji: '🧸', label: '포근해요' }] }
+          };
+
+          const [selectedZone, setSelectedZone] = useState('yellow');
+          const [selectedEmotion, setSelectedEmotion] = useState('😀');
+          const [content, setContent] = useState('');
+          const [isSecret, setIsSecret] = useState(false);
+          const [postToDelete, setPostToDelete] = useState(null);
+          const [selectedStudentProfile, setSelectedStudentProfile] = useState(null);
+
+          const allEmotions = Object.values(moodZones).flatMap(zone => zone.emotions.map(e => ({ ...e, color: zone.itemColor })));
+
+          const handlePost = (e) => {
+            e.preventDefault();
+            if (!content) return;
+            const newPost = { 
+              id: Date.now().toString(), 
+              studentId: currentUser.id, 
+              studentName: currentUser.name, 
+              emotion: selectedEmotion, 
+              content, 
+              date: new Date().toISOString().split('T')[0], 
+              isSecret,
+              likes: []
+            };
+            setDbData(prev => ({ ...prev, Emotions: [newPost, ...(prev.Emotions || [])] }));
+            syncToServer('Emotions', 'INSERT', null, newPost);
+            setContent(''); setIsSecret(false);
+            showToast(isSecret ? '비밀 일기가 등록되었습니다. 🔒' : '오늘의 마음이 등록되었습니다. 🫧');
+          };
+
+          const executeDelete = () => {
+            if (!postToDelete) return;
+            setDbData(prev => ({ ...prev, Emotions: prev.Emotions.filter(post => post.id !== postToDelete) }));
+            syncToServer('Emotions', 'DELETE', postToDelete, null);
+            showToast('일기가 삭제되었습니다.');
+            setPostToDelete(null);
+          };
+
+          const handleLike = (postId) => {
+            const post = emotionsData.find(p => p.id === postId);
+            if(!post) return;
+            const likes = Array.isArray(post.likes) ? post.likes : [];
+            let newLikes;
+            if (likes.includes(currentUser.id)) {
+              newLikes = likes.filter(id => id !== currentUser.id);
+            } else {
+              newLikes = [...likes, currentUser.id];
+            }
+            setDbData(prev => ({
+              ...prev,
+              Emotions: prev.Emotions.map(p => p.id === postId ? { ...p, likes: newLikes } : p)
+            }));
+            syncToServer('Emotions', 'UPDATE', postId, { likes: newLikes });
+          };
+
+          const emotionsData = Array.isArray(dbData.Emotions) ? dbData.Emotions : [];
+          const currentZoneData = moodZones[selectedZone];
+          const todayString = new Date().toISOString().split('T')[0];
+          const hasPostedToday = emotionsData.some(post => post.studentId === currentUser.id && post.date === todayString);
+
+          // 오늘의 마음 통계
+          const todayEmotions = emotionsData.filter(p => p.date === todayString);
+          const emotionSummary = {};
+          todayEmotions.forEach(p => {
+            emotionSummary[p.emotion] = (emotionSummary[p.emotion] || 0) + 1;
+          });
+          const topEmotions = Object.entries(emotionSummary).sort((a,b) => b[1] - a[1]);
+
+          return (
+            <div className="space-y-8">
+              {topEmotions.length > 0 && (
+                <div className="bg-white/80 backdrop-blur-md p-5 rounded-[2rem] shadow-sm border border-cyan-100 mb-6 flex flex-wrap gap-3 items-center">
+                  <span className="font-black text-cyan-800 mr-2">오늘 우리 반 기분 ☁️</span>
+                  {topEmotions.map(([emoji, count]) => {
+                    const info = allEmotions.find(e => e.emoji === emoji);
+                    return <span key={emoji} className="bg-white px-3 py-1.5 rounded-full font-bold text-sm shadow-sm border border-stone-100 text-stone-700">{emoji} {info ? info.label : '기분'} {count}명</span>
+                  })}
+                </div>
+              )}
+
+              {!hasPostedToday ? (
+                <form onSubmit={handlePost} className="bg-white/90 backdrop-blur-md p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-sky-100 space-y-6">
+                  <h3 className="font-black text-2xl text-sky-900 flex items-center gap-2 mb-4">🫧 지금 내 마음은?</h3>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {Object.values(moodZones).map(zone => (
+                      <button key={zone.id} type="button" onClick={() => {setSelectedZone(zone.id); setSelectedEmotion(zone.emotions[0].emoji);}} className={`p-4 rounded-3xl font-black flex flex-col items-center justify-center transition-all ${selectedZone === zone.id ? zone.btnColor + ' transform -translate-y-1 scale-105 border-2 border-white' : 'bg-stone-50 text-stone-500 hover:bg-stone-100 border border-stone-200'}`}>
+                        <span className="text-xl">{zone.name}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className={`p-6 rounded-[2.5rem] border-[3px] bg-white ${currentZoneData.itemColor.split(' ')[2]}`}>
+                    <div className="grid grid-cols-3 gap-3">
+                      {currentZoneData.emotions.map(emo => (
+                        <button key={emo.label} type="button" onClick={() => setSelectedEmotion(emo.emoji)} className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${selectedEmotion === emo.emoji ? currentZoneData.itemColor + ' shadow-md scale-105' : 'bg-stone-50 border-stone-100 text-stone-400 grayscale hover:grayscale-0 hover:bg-white'}`}>
+                          <span className="text-4xl mb-2 drop-shadow-sm">{emo.emoji}</span>
+                          <span className="text-sm font-black">{emo.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                    
+                    <div className="mt-6 pt-6 border-t border-stone-100">
+                      <div className="relative">
+                        <textarea placeholder="무슨 일이 있었는지, 왜 그런 기분이 들었는지 편하게 이야기해주세요." value={content} onChange={e=>setContent(e.target.value)} rows="4" className="w-full bg-stone-50 border-2 border-stone-100 rounded-3xl px-6 py-5 focus:outline-none focus:ring-4 focus:ring-sky-100 focus:border-sky-300 font-bold text-stone-800 resize-none" required />
+                        <div className="absolute bottom-4 right-4 flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-sm border border-stone-200">
+                          <span className="text-xs font-black text-stone-600">🔒 비밀글</span>
+                          <button type="button" onClick={() => setIsSecret(!isSecret)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isSecret ? 'bg-sky-500' : 'bg-stone-300'}`}>
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isSecret ? 'translate-x-6' : 'translate-x-1'}`} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <button type="submit" className="w-full bg-sky-500 hover:bg-sky-600 text-white font-black py-5 rounded-2xl shadow-md transition-transform hover:-translate-y-1 text-xl mt-4 border border-sky-600">일기장에 기록하기</button>
+                  </div>
+                </form>
+              ) : (
+                <div className="bg-sky-400 border-4 border-sky-200 text-white p-8 rounded-[2.5rem] shadow-sm flex flex-col items-center justify-center text-center gap-4 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 text-[10rem] opacity-20 transform translate-x-10 -translate-y-10">🫧</div>
+                  <h3 className="font-black text-3xl z-10">기록 완료!</h3>
+                  <p className="font-bold z-10 text-sky-50">오늘의 소중한 마음을 남겨주어 고마워요.</p>
+                </div>
+              )}
+              
+              <div className="space-y-5">
+                {emotionsData.length === 0 ? (
+                  <div className="text-center py-16 text-sky-600 bg-white/50 rounded-[2.5rem] font-bold border border-sky-100">아직 등록된 일기가 없어요.</div>
+                ) : (
+                  emotionsData.map(post => {
+                    const emotionInfo = allEmotions.find(e => e.emoji === post.emotion) || { label: '기분', color: 'bg-stone-100 border-stone-300 text-stone-700' };
+                    const postUser = dbData.Users.find(u => u.name === post.studentName);
+                    const postIsSecret = post.isSecret === true || String(post.isSecret).toLowerCase() === 'true';
+                    const canViewContent = currentUser.role === 'teacher' || post.studentId === currentUser.id;
+                    const postLikes = Array.isArray(post.likes) ? post.likes : [];
+                    const isLiked = postLikes.includes(currentUser.id);
+                    
+                    return (
+                      <div key={post.id} className="bg-white/95 backdrop-blur-sm p-6 rounded-[2rem] shadow-sm border border-stone-100 flex gap-5">
+                        <div className="flex-1">
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <button onClick={() => postUser && setSelectedStudentProfile(postUser)} className="font-black text-stone-800 text-xl hover:text-sky-500 transition-colors flex items-center gap-2">
+                                {safeText(post.studentName)}
+                              </button>
+                              <span className={`text-xs px-3 py-1.5 rounded-full font-black border-2 ${emotionInfo.color}`}>{post.emotion} {emotionInfo.label}</span>
+                              {postIsSecret && <span className="text-xs bg-stone-200 text-stone-700 px-3 py-1.5 rounded-full font-black border border-stone-300">🔒 비밀</span>}
+                            </div>
+                            {(currentUser.role === 'teacher' || post.studentId === currentUser.id) && (
+                              <div className="flex items-center gap-3">
+                                <span className="text-xs text-stone-400 font-bold">{safeText(post.date)}</span>
+                                <button onClick={() => setPostToDelete(post.id)} className="text-rose-400 hover:text-rose-600 font-bold text-xl bg-rose-50 p-2 rounded-xl">🗑️</button>
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className={`mt-3 text-base leading-relaxed p-5 rounded-2xl font-bold border ${postIsSecret ? (canViewContent ? 'bg-indigo-50 border-indigo-200 text-indigo-900' : 'bg-stone-100 border-stone-200 text-stone-500 italic') : 'bg-sky-50 border-sky-100 text-sky-900'}`}>
+                            {postIsSecret && !canViewContent ? '🤫 선생님께만 털어놓은 비밀 이야기예요.' : safeText(post.content)}
+                          </div>
+
+                          {(!postIsSecret || canViewContent) && (
+                            <div className="mt-3 flex justify-end">
+                              <button onClick={() => handleLike(post.id)} className={`flex items-center gap-1 text-sm font-bold px-3 py-1.5 rounded-full transition shadow-sm border ${isLiked ? 'bg-rose-50 text-rose-500 border-rose-100' : 'bg-white text-stone-400 border-stone-100 hover:bg-stone-50'}`}>
+                                {isLiked ? '❤️' : '🤍'} {postLikes.length > 0 && postLikes.length}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+
+              {postToDelete && (
+                <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+                  <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl text-center border-4 border-rose-200">
+                    <h3 className="font-black text-2xl text-rose-700 mb-2">🚨 삭제 확인</h3>
+                    <p className="text-stone-700 font-bold mb-8">정말 이 일기를 삭제할까요?</p>
+                    <div className="flex gap-4">
+                      <button onClick={() => setPostToDelete(null)} className="flex-1 bg-stone-200 text-stone-700 font-black py-4 rounded-2xl hover:bg-stone-300 transition">취소</button>
+                      <button onClick={executeDelete} className="flex-1 bg-rose-500 text-white font-black py-4 rounded-2xl shadow-md hover:bg-rose-600 transition">삭제</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedStudentProfile && <StudentProfileModal student={selectedStudentProfile} shopItems={dbData.ShopItems} onClose={() => setSelectedStudentProfile(null)} />}
+            </div>
+          );
+        }
+
+        function StudentProfileModal({ student, shopItems, onClose }) {
+          if (!student) return null;
+          const currentExp = student.exp % EXP_PER_LEVEL;
+          const expPercent = (currentExp / EXP_PER_LEVEL) * 100;
+          const equippedItems = Array.isArray(student.equippedItems) ? student.equippedItems : [];
+          const safeShopItems = Array.isArray(shopItems) ? shopItems : [];
+          const equippedIcons = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon).filter(Boolean);
+
+          return (
+            <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={onClose}>
+              <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl relative overflow-hidden border-4 border-orange-200" onClick={e => e.stopPropagation()}>
+                <div className="absolute top-0 right-0 w-40 h-40 bg-orange-100 rounded-full blur-3xl opacity-50 -z-10 -translate-y-1/2 translate-x-1/2"></div>
+                
+                <button onClick={onClose} className="absolute top-5 right-5 text-stone-400 hover:text-stone-700 bg-stone-100 p-2 rounded-full font-black">✕</button>
+
+                <div className="flex flex-col items-center gap-4 mb-6 mt-4">
+                  <div className="relative w-32 h-32 bg-orange-50 rounded-full flex items-center justify-center shadow-inner border-[6px] border-white overflow-hidden">
+                     {student.faceUrl ? (
+                       <img src={student.faceUrl} alt="프로필" className="w-full h-full object-cover" />
+                     ) : (
+                       <span className="text-5xl opacity-50 text-orange-400">👤</span>
+                     )}
+                     <div className="absolute inset-0 flex items-center justify-center drop-shadow-md">
+                       {equippedIcons.map((icon, idx) => (
+                         isImageUrl(icon) ? <img key={idx} src={icon} alt="장착" className="absolute w-24 h-24 object-contain" /> : <span key={idx} className="absolute text-[4rem]">{safeText(icon)}</span>
+                       ))}
+                     </div>
+                  </div>
+                  
+                  <div className="text-center">
+                    {student.title && <span className="bg-orange-100 text-orange-900 text-xs font-black px-4 py-1.5 rounded-full mb-2 inline-block shadow-sm border border-orange-200">✨ {safeText(student.title)}</span>}
+                    <div className="text-3xl font-black text-stone-800">{safeText(student.name)}</div>
+                  </div>
+                </div>
+
+                <div className="bg-sky-50/80 p-5 rounded-3xl border border-sky-100 mb-6 text-center shadow-sm">
+                  <span className="text-xs font-black text-sky-600 block mb-2">💬 한 줄 소개</span>
+                  <div className="text-sm font-bold text-stone-700 break-keep">
+                    {student.intro || <span className="text-sky-400">아직 소개를 작성하지 않았어요.</span>}
+                  </div>
+                </div>
+
+                <div className="space-y-3 bg-stone-50 p-5 rounded-3xl border border-stone-100">
+                  <div className="flex justify-between items-center bg-white p-3 rounded-2xl shadow-sm border border-stone-50">
+                    <span className="text-sm font-black text-stone-500">가진 돈</span>
+                    <span className="font-black text-amber-600 text-lg">🪙 {student.money}원</span>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-stone-50">
+                    <div className="flex justify-between font-black mb-2"><span className="text-sky-600 text-sm">Level {student.level}</span> <span className="text-sky-400 text-xs">{currentExp} / {EXP_PER_LEVEL}</span></div>
+                    <div className="h-3 bg-sky-100 rounded-full overflow-hidden shadow-inner"><div className="h-full bg-sky-400" style={{ width: `${expPercent}%` }}></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        function HallOfFameManager({ currentUser, dbData, setDbData, syncToServer, showToast }) {
+          const [category, setCategory] = useState('');
+          const [studentName, setStudentName] = useState('');
+          const [description, setDescription] = useState('');
+
+          const handlePost = (e) => {
+            e.preventDefault();
+            if (!category || !studentName || !description) return;
+            const newPost = { id: Date.now().toString(), category, studentName, description, date: new Date().toISOString().split('T')[0] };
+            setDbData(prev => ({ ...prev, HallOfFame: [newPost, ...(prev.HallOfFame || [])] }));
+            syncToServer('HallOfFame', 'INSERT', null, newPost);
+            setCategory(''); setStudentName(''); setDescription('');
+            showToast('명예의 전당에 등록되었습니다! 🏆');
+          };
+
+          const executeDelete = (id) => {
+            setDbData(prev => ({ ...prev, HallOfFame: prev.HallOfFame.filter(p => p.id !== id) }));
+            syncToServer('HallOfFame', 'DELETE', id, null);
+            showToast('기록이 삭제되었습니다.');
+          };
+
+          const records = Array.isArray(dbData.HallOfFame) ? dbData.HallOfFame : [];
+
+          return (
+            <div className="space-y-8">
+              <div className="bg-amber-100 p-8 rounded-[2.5rem] shadow-sm text-amber-900 relative overflow-hidden border border-amber-200">
+                <div className="absolute -right-4 -bottom-4 text-[8rem] opacity-30">🏆</div>
+                <h2 className="text-3xl font-black mb-2 relative z-10">명예의 전당</h2>
+                <p className="font-bold opacity-90 relative z-10">파도반을 빛낸 멋진 친구들을 기념하는 곳입니다!</p>
+              </div>
+
+              {currentUser.role === 'teacher' && (
+                <form onSubmit={handlePost} className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-amber-200 space-y-4">
+                  <h3 className="font-black text-lg text-amber-900">🎖️ 새로운 기록 등록</h3>
+                  <div className="flex gap-4">
+                    <input type="text" placeholder="분야 (예: 독서왕)" value={category} onChange={e=>setCategory(e.target.value)} className="w-1/3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-300 font-bold text-stone-800" required />
+                    <input type="text" placeholder="학생 이름" value={studentName} onChange={e=>setStudentName(e.target.value)} className="w-2/3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-300 font-bold text-stone-800" required />
+                  </div>
+                  <textarea placeholder="선정 이유 및 멋진 활약을 적어주세요." value={description} onChange={e=>setDescription(e.target.value)} rows="2" className="w-full bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-300 font-bold resize-none text-stone-800" required />
+                  <button type="submit" className="w-full bg-amber-400 text-amber-900 font-black py-4 rounded-xl shadow-md hover:bg-amber-500 transition border border-amber-500">전당에 올리기 🏆</button>
+                </form>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {records.length === 0 ? (
+                  <div className="col-span-full text-center py-10 text-amber-700 bg-white/50 border border-amber-100 rounded-[2rem] font-black">아직 등록된 기록이 없습니다.</div>
+                ) : (
+                  records.map(record => (
+                    <div key={record.id} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-amber-200 flex flex-col justify-between relative overflow-hidden group">
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-amber-50 rounded-bl-[100px] -z-10 transition-transform group-hover:scale-110"></div>
+                      <div>
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <span className="bg-amber-200 border border-amber-300 text-amber-900 text-xs font-black px-3 py-1 rounded-full">{safeText(record.category)}</span>
+                            <h4 className="font-black text-2xl text-slate-900 mt-2">{safeText(record.studentName)}</h4>
+                          </div>
+                          {currentUser.role === 'teacher' && (
+                            <button onClick={() => executeDelete(record.id)} className="text-rose-400 hover:text-rose-600 font-black text-xl bg-rose-50 p-2 rounded-full">✕</button>
+                          )}
+                        </div>
+                        <p className="text-slate-700 font-bold text-sm leading-relaxed mb-4">{safeText(record.description)}</p>
+                      </div>
+                      <div className="text-xs text-slate-500 font-bold text-right border-t border-slate-100 pt-3">{safeText(record.date)} 기록</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        function AnnouncementManager({ currentUser, dbData, setDbData, syncToServer, showToast }) {
+          const [title, setTitle] = useState('');
+          const [content, setContent] = useState('');
+          const [link, setLink] = useState('');
+
+          const handlePost = (e) => {
+            e.preventDefault();
+            if (!title || !content) return;
+            const newPost = { id: Date.now().toString(), title, content, link, date: new Date().toISOString().split('T')[0], authorName: currentUser.name };
+            setDbData(prev => ({ ...prev, Announcements: [newPost, ...prev.Announcements] }));
+            syncToServer('Announcements', 'INSERT', null, newPost);
+            setTitle(''); setContent(''); setLink('');
+            showToast('알림장이 등록되었습니다. 📢');
+          };
+
+          return (
+            <div className="space-y-6">
+              {currentUser.role === 'teacher' && (
+                <form onSubmit={handlePost} className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-sky-100 space-y-4">
+                  <input type="text" placeholder="제목" value={title} onChange={e=>setTitle(e.target.value)} className="w-full bg-white border border-sky-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-sky-200 font-bold text-stone-800" required />
+                  <textarea placeholder="내용" value={content} onChange={e=>setContent(e.target.value)} rows="3" className="w-full bg-white border border-sky-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-sky-200 font-bold resize-none text-stone-800" required />
+                  <input type="url" placeholder="첨부 링크 (https://...)" value={link} onChange={e=>setLink(e.target.value)} className="w-full bg-white border border-sky-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-sky-200 font-bold text-stone-800" />
+                  <button type="submit" className="w-full bg-sky-400 hover:bg-sky-500 text-white font-black py-4 rounded-xl shadow-md transition border border-sky-500">알림장 쓰기</button>
+                </form>
+              )}
+              <div className="space-y-4">
+                {dbData.Announcements.length === 0 && <div className="text-center py-10 text-sky-600 font-black bg-white/50 border border-sky-100 rounded-[2rem]">등록된 알림장이 없습니다.</div>}
+                {dbData.Announcements.map(ann => (
+                  <div key={ann.id} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-sky-100">
+                    <h4 className="font-black text-xl text-sky-900 mb-1">{safeText(ann.title)}</h4>
+                    <span className="text-xs text-sky-500 font-bold mb-4 block">{safeText(ann.date)}</span>
+                    <p className="text-stone-700 font-bold leading-relaxed whitespace-pre-wrap">{safeText(ann.content)}</p>
+                    {ann.link && <a href={ann.link} target="_blank" rel="noreferrer" className="inline-block mt-4 bg-sky-50 border border-sky-100 text-sky-700 px-4 py-2 rounded-xl font-black text-sm hover:bg-sky-100 transition">🔗 링크 열기</a>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        }
+
+        function Shop({ currentUser, dbData, setDbData, updateStudentData, syncToServer, showToast }) {
+          const [showUpload, setShowUpload] = useState(false);
+          const [newItemName, setNewItemName] = useState('');
+          const [newItemIcon, setNewItemIcon] = useState('🍎');
+          const shopItems = Array.isArray(dbData.ShopItems) ? dbData.ShopItems : [];
+          const ownedItems = Array.isArray(currentUser.ownedItems) ? currentUser.ownedItems : [];
+
+          const handleBuy = (item) => {
+            if (ownedItems.some(id => String(id) === String(item.id))) return showToast('이미 가진 아이템이에요!');
+            if (currentUser.money < item.price) return showToast('돈이 부족해요!');
+            updateStudentData(currentUser.id, { money: currentUser.money - item.price, ownedItems: [...ownedItems, item.id] });
+            showToast(`${item.name} 구매 완료! 🛍️`);
+          };
+
+          const handleUploadSubmit = (e) => {
+            e.preventDefault();
+            if(!newItemName) return;
+            const newPending = { id: Date.now().toString(), studentName: currentUser.name, itemName: newItemName, icon: newItemIcon, type: 'head' };
+            setDbData(prev => ({ ...prev, PendingItems: [...(prev.PendingItems || []), newPending] }));
+            syncToServer('PendingItems', 'INSERT', null, newPending);
+            setShowUpload(false); setNewItemName(''); setNewItemIcon('🍎');
+            showToast('선생님께 제안을 보냈어요!');
+          };
+
+          return (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center bg-white/90 p-5 rounded-[2rem] border border-amber-200 shadow-sm">
+                <div className="font-black text-amber-900 text-lg">내 지갑</div>
+                <div className="text-2xl font-black text-amber-700 bg-amber-100 border border-amber-300 px-4 py-2 rounded-2xl">🪙 {currentUser.money}</div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {shopItems.map((item, idx) => {
+                  if (!item || !item.id) return null;
+                  const isOwned = ownedItems.some(id => String(id) === String(item.id));
+                  return (
+                    <div key={item.id || idx} className="bg-white/95 rounded-[2rem] p-5 shadow-sm border border-stone-200 text-center flex flex-col hover:border-sky-300 transition-colors">
+                      <div className="w-20 h-20 mb-4 mx-auto flex items-center justify-center bg-stone-100 rounded-3xl border border-stone-200 shadow-inner">
+                        {isImageUrl(item.icon) ? <img src={item.icon} alt={item.name} className="w-full h-full object-contain p-2" /> : <span className="text-5xl drop-shadow-md">{safeText(item.icon)}</span>}
+                      </div>
+                      <div className="font-black text-slate-800 mb-1">{safeText(item.name)}</div>
+                      <div className="text-sky-700 font-black mb-4">{item.price} 원</div>
+                      <div className="mt-auto">
+                        <button onClick={() => handleBuy(item)} disabled={isOwned} className={`w-full py-3 rounded-xl text-sm font-black transition-all ${isOwned ? 'bg-slate-200 text-slate-500 border border-slate-300' : 'bg-sky-400 text-white border border-sky-500 shadow-md hover:bg-sky-500 hover:-translate-y-1'}`}>
+                          {isOwned ? '보유중' : '구매하기'}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="mt-8">
+                <button onClick={() => setShowUpload(!showUpload)} className="w-full bg-white/90 text-sky-800 font-black py-5 rounded-[2rem] shadow-sm border border-sky-300 hover:bg-sky-50 transition">
+                  📤 아이템 제안하기
+                </button>
+                {showUpload && (
+                  <form onSubmit={handleUploadSubmit} className="mt-4 bg-white/95 p-6 rounded-[2rem] shadow-sm border border-sky-200 space-y-4">
+                    <div className="flex gap-4">
+                      <input type="text" value={newItemIcon} onChange={e=>setNewItemIcon(e.target.value)} className="w-1/4 text-center text-2xl p-3 bg-white border border-sky-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sky-400 font-bold" placeholder="이모지/URL" required />
+                      <input type="text" value={newItemName} onChange={e=>setNewItemName(e.target.value)} className="w-3/4 p-3 bg-white border border-sky-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sky-400 font-bold text-stone-800" placeholder="아이템 이름" required />
+                    </div>
+                    <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 border border-sky-700 text-white font-black py-4 rounded-xl shadow-md transition">선생님께 보내기</button>
+                  </form>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        function ApprovalManager({ dbData, setDbData, syncToServer, showToast }) {
+          const handleApprove = (item) => {
+            const newItem = { id: Date.now().toString(), name: item.itemName, icon: item.icon, price: 500, type: item.type };
+            setDbData(prev => ({ ...prev, ShopItems: [...prev.ShopItems, newItem], PendingItems: prev.PendingItems.filter(i => i.id !== item.id) }));
+            syncToServer('ShopItems', 'INSERT', null, newItem); syncToServer('PendingItems', 'DELETE', item.id, null);
+            showToast('승인 완료!');
+          };
+          const handleReject = (id) => {
+            setDbData(prev => ({ ...prev, PendingItems: prev.PendingItems.filter(i => i.id !== id) }));
+            syncToServer('PendingItems', 'DELETE', id, null);
+            showToast('거절 완료.');
+          };
+          if (dbData.PendingItems.length === 0) return <div className="text-center py-10 text-sky-700 bg-white/50 border border-sky-100 font-black rounded-[2rem]">대기중인 아이템이 없습니다.</div>;
+          return (
+            <div className="space-y-4">
+              {dbData.PendingItems.map(item => (
+                <div key={item.id} className="bg-white/95 p-5 rounded-[2rem] shadow-sm border border-sky-200 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-stone-50 w-16 h-16 rounded-2xl flex items-center justify-center border border-stone-200">
+                      {isImageUrl(item.icon) ? <img src={item.icon} alt={item.itemName} className="w-full h-full object-contain p-1" /> : <span className="text-4xl">{safeText(item.icon)}</span>}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-sky-600 mb-1">{safeText(item.studentName)}의 제안</div>
+                      <div className="font-black text-lg text-stone-900">{safeText(item.itemName)}</div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleApprove(item)} className="bg-emerald-400 text-white border border-emerald-500 px-4 py-3 rounded-xl font-black shadow-sm hover:bg-emerald-500 transition">승인</button>
+                    <button onClick={() => handleReject(item.id)} className="bg-rose-400 text-white border border-rose-500 px-4 py-3 rounded-xl font-black shadow-sm hover:bg-rose-500 transition">거절</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        }
 
       const root = ReactDOM.createRoot(document.getElementById('root'));
       root.render(<App />);
