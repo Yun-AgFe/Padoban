@@ -30,7 +30,7 @@
       const { useState, useEffect } = React;
 
       // ==========================================
-      // 💡 [선생님, 주목!] 아래 주소를 반드시 선생님의 앱스스크립트 주소로 바꿔주세요!
+      // 💡 선생님의 앱스스크립트 주소 (끝에 ?api=true 필수)
       // ==========================================
       const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzev5JeOhBVHDe1Uy6EIFSEOH_BEP2YTncgLjrQB4kRIWc-hCk3uv0hbrcdoiHjAMIj/exec?api=true'; 
       const EXP_PER_LEVEL = 100;
@@ -121,7 +121,6 @@
               equippedItems: safeParseArray(u.equippedItems),
               ownedTitles: safeParseArray(u.ownedTitles),
               intro: safeText(u.intro),
-              faceUrl: safeText(u.faceUrl), 
               imoduId: safeText(u.imoduId), 
               imoduPwd: safeText(u.imoduPwd) 
             }));
@@ -134,7 +133,8 @@
             
             const parsedEmotions = (Array.isArray(data.Emotions) ? data.Emotions : []).map(e => ({
               ...e,
-              likes: safeParseArray(e.likes)
+              likes: safeParseArray(e.likes),
+              aiReply: safeText(e.aiReply)
             }));
 
             setDbData({
@@ -200,14 +200,19 @@
           }
         };
 
-        // 개별 학생 업데이트 함수 (동기식 상태 계산으로 버그 수정)
+        // 💡 개별 업데이트: 확실한 숫자 변환 추가
         const updateStudentData = (studentId, updates) => {
           const studentToUpdate = dbData.Users.find(u => u.id === studentId);
           if (!studentToUpdate) return;
           
           const updatedStudent = { ...studentToUpdate, ...updates };
+          
           if (updates.exp !== undefined) {
+            updatedStudent.exp = Number(updatedStudent.exp || 0);
             updatedStudent.level = Math.floor(updatedStudent.exp / EXP_PER_LEVEL) + 1;
+          }
+          if (updates.money !== undefined) {
+            updatedStudent.money = Number(updatedStudent.money || 0);
           }
 
           setDbData(prev => ({
@@ -227,15 +232,14 @@
             ownedItems: updatedStudent.ownedItems,
             equippedItems: updatedStudent.equippedItems,
             ownedTitles: updatedStudent.ownedTitles,
-            intro: updatedStudent.intro,
-            faceUrl: updatedStudent.faceUrl 
+            intro: updatedStudent.intro
           };
           if (updates.pwd !== undefined) dataToSync.pwd = updates.pwd;
           
           syncToServer('Users', 'UPDATE', studentId, dataToSync);
         };
 
-        // 💡 일괄 지급 및 다수 업데이트를 위한 순차 전송 함수 (구글 서버 과부하 방지)
+        // 💡 일괄 지급 전용 업데이트 (오류 원천 차단 및 순차 전송)
         const batchUpdateStudents = async (studentIds, type, val) => {
           setSyncing(true);
           let newUsers = [...dbData.Users];
@@ -244,16 +248,28 @@
           studentIds.forEach(id => {
             const student = newUsers.find(u => u.id === id);
             if (student) {
-              const updated = { ...student, [type]: Number(student[type]) + val };
-              if (type === 'exp') updated.level = Math.floor(updated.exp / EXP_PER_LEVEL) + 1;
+              const updated = { ...student };
+              
+              if (type === 'exp') {
+                updated.exp = Number(student.exp || 0) + Number(val);
+                updated.level = Math.floor(updated.exp / EXP_PER_LEVEL) + 1;
+              } else if (type === 'money') {
+                updated.money = Number(student.money || 0) + Number(val);
+              }
+              
               newUsers = newUsers.map(u => u.id === id ? updated : u);
 
               updatePayloads.push({
                 id: id,
                 data: {
-                  exp: updated.exp, level: updated.level, money: updated.money, title: updated.title,
-                  ownedItems: updated.ownedItems, equippedItems: updated.equippedItems,
-                  ownedTitles: updated.ownedTitles, intro: updated.intro, faceUrl: updated.faceUrl
+                  exp: updated.exp, 
+                  level: updated.level, 
+                  money: updated.money, 
+                  title: updated.title,
+                  ownedItems: updated.ownedItems, 
+                  equippedItems: updated.equippedItems,
+                  ownedTitles: updated.ownedTitles, 
+                  intro: updated.intro
                 }
               });
             }
@@ -261,7 +277,7 @@
 
           setDbData(prev => ({ ...prev, Users: newUsers }));
 
-          // 구글 서버 트래픽 방어를 위해 순차적으로 전송
+          // 구글 서버 트래픽 튕김 방지를 위해 순차적 전송
           for (const payload of updatePayloads) {
             try {
               await fetch(SCRIPT_URL, {
@@ -303,6 +319,12 @@
                 </h1>
                 <div className="flex items-center gap-4">
                   {syncing && <span className="animate-spin inline-block text-orange-400">🔄</span>}
+                  
+                  {/* 새로고침 버튼 추가 */}
+                  <button onClick={fetchData} className="p-2 text-stone-500 hover:text-sky-600 transition" title="새로고침">
+                    🔄
+                  </button>
+
                   <span className="font-bold text-orange-900 bg-orange-100 px-3 py-1.5 rounded-full text-sm">{safeText(currentUser.name)} {currentUser.role === 'teacher' ? '선생님' : '학생'}</span>
                   <button onClick={() => setCurrentUser(null)} className="p-2 text-2xl hover:scale-110 transition drop-shadow-sm" title="로그아웃">🚪</button>
                 </div>
@@ -450,7 +472,6 @@
 
           if (type === 'money') setBatchMoney('');
           else setBatchExp('');
-          showToast(`요청이 전송되었습니다. 잠시 후 동기화됩니다.`);
         };
 
         const tabs = [
@@ -500,7 +521,7 @@
               )}
 
               {activeTab === 'tasks' && <TaskManagerTeacher currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
-              {activeTab === 'emotions' && <EmotionBoard currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+              {activeTab === 'emotions' && <EmotionBoard currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} updateStudentData={updateStudentData} />}
               {activeTab === 'announcements' && <AnnouncementManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
               {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
               {activeTab === 'approvals' && <ApprovalManager dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
@@ -543,10 +564,10 @@
               <div className="flex justify-between items-center border-b border-stone-50 pb-4">
                 <div className="flex items-center gap-4">
                   <div className="relative w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center border-4 border-white shadow-inner overflow-hidden cursor-pointer" onClick={onOpenProfile}>
-                     {student.faceUrl ? (
-                        <img src={student.faceUrl} alt="프로필" className="w-full h-full object-cover" />
-                     ) : (
-                        <span className="text-3xl text-orange-200">👦</span>
+                     {equippedIcons.length === 0 && (
+                       <span className="text-3xl text-orange-400 drop-shadow-sm">
+                         {student.gender === 'M' ? '👦' : (student.gender === 'F' ? '👧' : '👤')}
+                       </span>
                      )}
                      <div className="absolute inset-0 flex items-center justify-center">
                        {equippedIcons.map((icon, idx) => (
@@ -570,11 +591,11 @@
               <div className="space-y-3">
                 <div className="flex gap-2">
                   <input type="number" placeholder="경험치 (예:10)" value={expAmount} onChange={e => setExpAmount(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-sky-300 font-bold text-stone-800" />
-                  <button onClick={() => { updateStudentData(student.id, { exp: Number(student.exp) + Number(expAmount) }); showToast(`${student.name} EXP 지급!`); setExpAmount(''); }} className="bg-sky-400 hover:bg-sky-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">EXP 지급</button>
+                  <button onClick={() => { updateStudentData(student.id, { exp: Number(student.exp || 0) + Number(expAmount) }); showToast(`${student.name} EXP 지급!`); setExpAmount(''); }} className="bg-sky-400 hover:bg-sky-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">EXP 지급</button>
                 </div>
                 <div className="flex gap-2">
                   <input type="number" placeholder="용돈 (예:100)" value={moneyAmount} onChange={e => setMoneyAmount(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-amber-300 font-bold text-stone-800" />
-                  <button onClick={() => { updateStudentData(student.id, { money: Number(student.money) + Number(moneyAmount) }); showToast(`${student.name} 용돈 지급!`); setMoneyAmount(''); }} className="bg-amber-400 hover:bg-amber-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">용돈 지급</button>
+                  <button onClick={() => { updateStudentData(student.id, { money: Number(student.money || 0) + Number(moneyAmount) }); showToast(`${student.name} 용돈 지급!`); setMoneyAmount(''); }} className="bg-amber-400 hover:bg-amber-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">용돈 지급</button>
                 </div>
                 <div className="flex gap-2">
                   <input type="text" placeholder="새로운 칭호 하사하기" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-orange-300 font-bold text-stone-800" />
@@ -732,8 +753,8 @@
             const student = students.find(s => s.id === studentId);
             if (student && (expVal > 0 || moneyVal > 0)) {
                updateStudentData(studentId, {
-                 exp: Number(student.exp) + expVal,
-                 money: Number(student.money) + moneyVal
+                 exp: Number(student.exp || 0) + expVal,
+                 money: Number(student.money || 0) + moneyVal
                });
                showToast(`${studentName} 학생 확인 완료! 보상 지급됨.`);
             } else {
@@ -1038,7 +1059,7 @@
 
               {activeTab === 'profile' && <StudentProfile currentUser={currentUser} shopItems={dbData.ShopItems} updateStudentData={updateStudentData} showToast={showToast} onOpenPwdModal={onOpenPwdModal} />}
               {activeTab === 'tasks' && <TaskManagerStudent currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
-              {activeTab === 'emotions' && <EmotionBoard currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+              {activeTab === 'emotions' && <EmotionBoard currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} updateStudentData={updateStudentData} />}
               {activeTab === 'shop' && <Shop currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
               {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
               {activeTab === 'announcements' && (
@@ -1073,9 +1094,6 @@
           const [isEditingIntro, setIsEditingIntro] = useState(false);
           const [introText, setIntroText] = useState(currentUser.intro || '');
           
-          const [isEditingFace, setIsEditingFace] = useState(false);
-          const [faceUrlText, setFaceUrlText] = useState(currentUser.faceUrl || '');
-
           const toggleEquip = (itemId) => {
             let newEquipped = [...equippedItems];
             if (newEquipped.some(id => String(id) === String(itemId))) {
@@ -1099,12 +1117,6 @@
             if(showToast) showToast('소개말 저장 완료!');
           };
 
-          const saveFaceUrl = () => {
-            updateStudentData(currentUser.id, { faceUrl: faceUrlText });
-            setIsEditingFace(false);
-            if(showToast) showToast('얼굴 사진 변경 완료!');
-          };
-
           const equippedIcons = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon || '');
 
           return (
@@ -1114,29 +1126,18 @@
                 
                 <div className="relative flex flex-col items-center">
                   <div className="relative w-40 h-40 bg-gradient-to-tr from-orange-50 to-sky-50 rounded-full flex items-center justify-center shadow-inner border-[6px] border-white shrink-0 overflow-hidden">
-                    {currentUser.faceUrl ? (
-                      <img src={currentUser.faceUrl} alt="내 얼굴" className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-6xl opacity-50 text-orange-400">👤</span>
+                    {/* 장착한 아이템이 없을 때만 기본 아바타 표시 */}
+                    {equippedIcons.length === 0 && (
+                      <span className="text-[5rem] drop-shadow-md text-orange-400">
+                        {currentUser.gender === 'M' ? '👦' : (currentUser.gender === 'F' ? '👧' : '👤')}
+                      </span>
                     )}
-                    <div className="absolute inset-0 flex items-center justify-center drop-shadow-lg">
+                    <div className="absolute inset-0 flex items-center justify-center drop-shadow-lg pointer-events-none">
                       {equippedIcons.map((icon, idx) => (
                         isImageUrl(icon) ? <img key={idx} src={icon} alt="장착" className="absolute w-28 h-28 object-contain" /> : <span key={idx} className="absolute text-[5rem]">{safeText(icon)}</span>
                       ))}
                     </div>
                   </div>
-                  
-                  {!isEditingFace ? (
-                     <button onClick={() => setIsEditingFace(true)} className="mt-3 text-xs bg-white text-orange-600 font-bold px-3 py-1.5 rounded-full border border-orange-200 shadow-sm hover:bg-orange-50">사진 바꾸기 📷</button>
-                  ) : (
-                    <div className="mt-3 flex flex-col gap-2 w-full max-w-[150px]">
-                      <input type="text" value={faceUrlText} onChange={e=>setFaceUrlText(e.target.value)} placeholder="이미지 URL 주소" className="text-xs p-2 border border-orange-200 rounded-xl outline-none" />
-                      <div className="flex gap-1 justify-center">
-                        <button onClick={() => setIsEditingFace(false)} className="text-[10px] bg-stone-100 px-3 py-1 rounded-lg font-bold text-stone-500">취소</button>
-                        <button onClick={saveFaceUrl} className="text-[10px] bg-orange-400 text-white px-3 py-1 rounded-lg font-bold">저장</button>
-                      </div>
-                    </div>
-                  )}
                 </div>
                 
                 <div className="flex-1 w-full flex flex-col">
@@ -1245,7 +1246,7 @@
           );
         }
 
-        function EmotionBoard({ currentUser, dbData, setDbData, syncToServer, showToast }) {
+        function EmotionBoard({ currentUser, dbData, setDbData, syncToServer, showToast, updateStudentData }) {
           const moodZones = {
             red: { id: 'red', name: '빨강 구역', btnColor: 'bg-rose-400 text-white shadow-md', itemColor: 'bg-rose-50 text-rose-800 border-rose-200', emotions: [{ emoji: '😡', label: '화나요' }, { emoji: '😫', label: '짜증나요' }, { emoji: '😤', label: '답답해요' }, { emoji: '😬', label: '긴장돼요' }, { emoji: '😥', label: '걱정돼요' }, { emoji: '😰', label: '불안해요' }, { emoji: '😱', label: '무서워요' }, { emoji: '😳', label: '당황' }, { emoji: '🥺', label: '억울해요' }] },
             yellow: { id: 'yellow', name: '노랑 구역', btnColor: 'bg-amber-400 text-amber-900 shadow-md', itemColor: 'bg-amber-50 text-amber-900 border-amber-300', emotions: [{ emoji: '😆', label: '신나요' }, { emoji: '😀', label: '기뻐요' }, { emoji: '🥰', label: '행복해요' }, { emoji: '💓', label: '설레요' }, { emoji: '⚡', label: '활기차요' }, { emoji: '😲', label: '놀라워요' }, { emoji: '😎', label: '자랑스러워' }, { emoji: '💪', label: '자신있어요' }, { emoji: '🤩', label: '기대돼요' }] },
@@ -1262,9 +1263,23 @@
 
           const allEmotions = Object.values(moodZones).flatMap(zone => zone.emotions.map(e => ({ ...e, color: zone.itemColor })));
 
+          // 🤖 파도봇의 AI 답장 생성 로직
+          const getAiReply = (emotionEmoji) => {
+            const zone = Object.values(moodZones).find(z => z.emotions.some(e => e.emoji === emotionEmoji));
+            if (!zone) return "소중한 마음을 나눠주어 고마워요. 선생님이 항상 응원합니다! 😊";
+            if (zone.id === 'red') return "많이 힘들었겠어요. 화나고 답답한 마음을 솔직하게 털어놓은 것만으로도 정말 대단해요! 파도봇이 언제나 곁에서 응원할게요. 💪";
+            if (zone.id === 'yellow') return "우와! 기분 좋은 일이 있었군요! 즐겁고 신나는 마음이 여기까지 전해지는 것 같아요. 앞으로도 이런 행복한 날들이 가득하기를 파도봇이 바랄게요! ✨";
+            if (zone.id === 'blue') return "마음이 무겁고 슬플 땐 억지로 참지 않아도 괜찮아요. 파도봇이 옆에서 따뜻하게 안아줄게요. 푹 쉬고 나면 내일은 한결 더 나아질 거예요. 💙";
+            if (zone.id === 'green') return "차분하고 평온한 마음 상태군요. 지금의 여유를 맘껏 즐기길 바라요! 스스로의 마음을 잘 돌보는 모습이 아주 멋져요. 🌿";
+            return "오늘 하루도 수고 많았어요! 내일도 파이팅! 😊";
+          };
+
           const handlePost = (e) => {
             e.preventDefault();
             if (!content) return;
+            
+            const aiReplyText = getAiReply(selectedEmotion);
+
             const newPost = { 
               id: Date.now().toString(), 
               studentId: currentUser.id, 
@@ -1273,12 +1288,20 @@
               content, 
               date: new Date().toISOString().split('T')[0], 
               isSecret,
-              likes: []
+              likes: [],
+              aiReply: aiReplyText // AI 답장 저장
             };
+            
             setDbData(prev => ({ ...prev, Emotions: [newPost, ...(prev.Emotions || [])] }));
             syncToServer('Emotions', 'INSERT', null, newPost);
+            
+            // 💡 경험치 10 지급 로직
+            if (currentUser.role === 'student' && updateStudentData) {
+              updateStudentData(currentUser.id, { exp: Number(currentUser.exp || 0) + 10 });
+            }
+
             setContent(''); setIsSecret(false);
-            showToast(isSecret ? '비밀 일기가 등록되었습니다. 🔒' : '오늘의 마음이 등록되었습니다. 🫧');
+            showToast(isSecret ? '비밀 일기가 등록되었습니다. 🔒 (+10 EXP)' : '마음 일기를 작성하여 경험치 10을 얻었습니다! ⭐');
           };
 
           const executeDelete = () => {
@@ -1410,6 +1433,17 @@
                             {postIsSecret && !canViewContent ? '🤫 선생님께만 털어놓은 비밀 이야기예요.' : safeText(post.content)}
                           </div>
 
+                          {/* 🤖 파도봇의 AI 편지 렌더링 */}
+                          {(!postIsSecret || canViewContent) && post.aiReply && (
+                            <div className="mt-3 bg-white/70 p-4 rounded-xl border border-sky-100 flex items-start gap-3">
+                              <span className="text-2xl drop-shadow-sm">🤖</span>
+                              <div>
+                                <span className="text-xs font-black text-sky-600 block mb-1">파도봇의 답장</span>
+                                <p className="text-sm font-bold text-stone-600 leading-relaxed">{safeText(post.aiReply)}</p>
+                              </div>
+                            </div>
+                          )}
+
                           {(!postIsSecret || canViewContent) && (
                             <div className="mt-3 flex justify-end">
                               <button onClick={() => handleLike(post.id)} className={`flex items-center gap-1 text-sm font-bold px-3 py-1.5 rounded-full transition shadow-sm border ${isLiked ? 'bg-rose-50 text-rose-500 border-rose-100' : 'bg-white text-stone-400 border-stone-100 hover:bg-stone-50'}`}>
@@ -1459,12 +1493,13 @@
 
                 <div className="flex flex-col items-center gap-4 mb-6 mt-4">
                   <div className="relative w-32 h-32 bg-orange-50 rounded-full flex items-center justify-center shadow-inner border-[6px] border-white overflow-hidden">
-                     {student.faceUrl ? (
-                       <img src={student.faceUrl} alt="프로필" className="w-full h-full object-cover" />
-                     ) : (
-                       <span className="text-5xl opacity-50 text-orange-400">👤</span>
+                     {/* 장착한 아이템이 없을 때만 아바타 표시 */}
+                     {equippedIcons.length === 0 && (
+                       <span className="text-[4rem] drop-shadow-md text-orange-400">
+                         {student.gender === 'M' ? '👦' : (student.gender === 'F' ? '👧' : '👤')}
+                       </span>
                      )}
-                     <div className="absolute inset-0 flex items-center justify-center drop-shadow-md">
+                     <div className="absolute inset-0 flex items-center justify-center drop-shadow-md pointer-events-none">
                        {equippedIcons.map((icon, idx) => (
                          isImageUrl(icon) ? <img key={idx} src={icon} alt="장착" className="absolute w-24 h-24 object-contain" /> : <span key={idx} className="absolute text-[4rem]">{safeText(icon)}</span>
                        ))}
@@ -1620,7 +1655,7 @@
           const handleBuy = (item) => {
             if (ownedItems.some(id => String(id) === String(item.id))) return showToast('이미 가진 아이템이에요!');
             if (currentUser.money < item.price) return showToast('돈이 부족해요!');
-            updateStudentData(currentUser.id, { money: currentUser.money - item.price, ownedItems: [...ownedItems, item.id] });
+            updateStudentData(currentUser.id, { money: Number(currentUser.money || 0) - item.price, ownedItems: [...ownedItems, item.id] });
             showToast(`${item.name} 구매 완료! 🛍️`);
           };
 
