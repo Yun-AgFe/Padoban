@@ -73,7 +73,7 @@
         const [showPwdModal, setShowPwdModal] = useState(false);
 
         const [dbData, setDbData] = useState({
-          Users: [], Announcements: [], ShopItems: [], PendingItems: [], Emotions: [], HallOfFame: [], Tasks: [], Jobs: []
+          Users: [], Announcements: [], ShopItems: [], PendingItems: [], Emotions: [], HallOfFame: [], Tasks: [], Jobs: [], PurchaseLogs: []
         });
 
         const [loginName, setLoginName] = useState('');
@@ -91,7 +91,7 @@
             const res = await fetch(SCRIPT_URL);
             const data = await res.json();
             
-            const requiredSheets = ['Users', 'Announcements', 'ShopItems', 'PendingItems', 'Emotions', 'HallOfFame', 'Tasks', 'Jobs'];
+            const requiredSheets = ['Users', 'Announcements', 'ShopItems', 'PendingItems', 'Emotions', 'HallOfFame', 'Tasks', 'Jobs', 'PurchaseLogs'];
             const missingSheets = requiredSheets.filter(sheet => !data[sheet]);
             
             if (missingSheets.length > 0) {
@@ -148,7 +148,8 @@
               Emotions: parsedEmotions,
               HallOfFame: Array.isArray(data.HallOfFame) ? data.HallOfFame : [],
               Tasks: parsedTasks,
-              Jobs: Array.isArray(data.Jobs) ? data.Jobs : []
+              Jobs: Array.isArray(data.Jobs) ? data.Jobs : [],
+              PurchaseLogs: Array.isArray(data.PurchaseLogs) ? data.PurchaseLogs : []
             });
           } catch (error) {
             console.error("Data Fetch Error:", error);
@@ -483,6 +484,7 @@
             { id: 'announcements', label: '알림장', icon: '📢' },
             { id: 'halloffame', label: '명예의 전당', icon: '🏆' },
             { id: 'jobs', label: '직업 관리', icon: '💼' },
+            { id: 'purchases', label: '구매 내역', icon: '🛒' }, // 💡 구매 내역 탭 추가됨
             { id: 'approvals', label: `아이템 승인 (${dbData.PendingItems?.length || 0})`, icon: '🎁' },
           ];
 
@@ -528,9 +530,63 @@
               {activeTab === 'announcements' && <AnnouncementManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
               {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
               {activeTab === 'jobs' && <JobManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+              {activeTab === 'purchases' && <PurchaseLogManager dbData={dbData} />}
               {activeTab === 'approvals' && <ApprovalManager dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
 
               {selectedStudentProfile && <StudentProfileModal student={selectedStudentProfile} shopItems={dbData.ShopItems} jobs={dbData.Jobs} onClose={() => setSelectedStudentProfile(null)} />}
+            </div>
+          );
+        }
+
+        // 💡 구매 내역 관리 컴포넌트 추가
+        function PurchaseLogManager({ dbData }) {
+          const logs = Array.isArray(dbData.PurchaseLogs) ? dbData.PurchaseLogs : [];
+
+          // 날짜별로 그룹화 (시간 부분을 잘라내고 YYYY-MM-DD만 사용)
+          const groupedLogs = logs.reduce((acc, log) => {
+            const fullDate = log.date || '';
+            const date = fullDate.includes('T') ? fullDate.split('T')[0] : (fullDate || '날짜 없음');
+            if (!acc[date]) acc[date] = [];
+            acc[date].push(log);
+            return acc;
+          }, {});
+
+          const dates = Object.keys(groupedLogs).sort((a, b) => new Date(b) - new Date(a)); // 최신 날짜순
+
+          return (
+            <div className="space-y-8">
+              <div className="bg-emerald-100 p-8 rounded-[2.5rem] shadow-sm text-emerald-900 relative overflow-hidden border border-emerald-200">
+                <div className="absolute -right-4 -bottom-4 text-[8rem] opacity-30">🛒</div>
+                <h2 className="text-3xl font-black mb-2 relative z-10">상점 구매 내역</h2>
+                <p className="font-bold opacity-90 relative z-10">학생들이 언제 어떤 아이템을 샀는지 일목요연하게 확인하세요!</p>
+              </div>
+
+              {dates.length === 0 ? (
+                <div className="text-center py-16 text-emerald-600 bg-white/50 rounded-[2.5rem] font-bold border border-emerald-100">아직 상점에서 구매한 내역이 없습니다.</div>
+              ) : (
+                <div className="space-y-6">
+                  {dates.map(date => (
+                    <div key={date} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-stone-200">
+                      <h3 className="font-black text-xl text-emerald-800 mb-4 flex items-center gap-2">📅 {date}</h3>
+                      <div className="space-y-3">
+                        {groupedLogs[date].map((log, idx) => (
+                          <div key={log.id || idx} className="flex justify-between items-center bg-stone-50 p-4 rounded-2xl border border-stone-100">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="font-black text-lg text-stone-800">{safeText(log.studentName)}</span>
+                              <span className="text-sm font-bold text-stone-500">학생이</span>
+                              <span className="font-black text-purple-600 bg-purple-100 px-3 py-1.5 rounded-full shadow-sm">{safeText(log.itemName)}</span>
+                              <span className="text-sm font-bold text-stone-500">을(를) 구매했습니다.</span>
+                            </div>
+                            <div className="font-black text-amber-600 whitespace-nowrap">
+                              - 🪙 {log.price}원
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         }
@@ -1592,170 +1648,6 @@
           );
         }
 
-        // 💡 새롭게 정리된 명예의 전당 (분야별 탭 완벽 복구 및 적용)
-        function HallOfFameManager({ currentUser, dbData, setDbData, syncToServer, showToast }) {
-          const records = Array.isArray(dbData.HallOfFame) ? dbData.HallOfFame : [];
-          
-          // 기본 카테고리 + 기존 데이터에 있는 카테고리 (요청하신 분야로 수정)
-          const defaultCategories = ['스포츠', '곱셈', '나눗셈', '가가볼'];
-          const existingCategories = [...new Set(records.map(r => r.category))];
-          const allCategories = [...new Set([...defaultCategories, ...existingCategories])].filter(Boolean);
-          
-          const [activeTab, setActiveTab] = useState(allCategories[0] || '스포츠');
-          
-          const [categorySelect, setCategorySelect] = useState(allCategories[0] || '');
-          const [customCategory, setCustomCategory] = useState('');
-          const [showCustom, setShowCustom] = useState(false);
-          
-          const [studentName, setStudentName] = useState('');
-          const [description, setDescription] = useState('');
-
-          // 데이터 갱신 시 activeTab이 유효한지 확인
-          useEffect(() => {
-            if (!allCategories.includes(activeTab) && allCategories.length > 0) {
-              setActiveTab(allCategories[0]);
-            }
-          }, [allCategories, activeTab]);
-
-          const handlePost = (e) => {
-            e.preventDefault();
-            const finalCategory = showCustom ? customCategory.trim() : categorySelect;
-            if (!finalCategory || !studentName || !description) return;
-            
-            const newPost = { id: Date.now().toString(), category: finalCategory, studentName, description, date: new Date().toISOString().split('T')[0] };
-            setDbData(prev => ({ ...prev, HallOfFame: [newPost, ...(prev.HallOfFame || [])] }));
-            syncToServer('HallOfFame', 'INSERT', null, newPost);
-            
-            setStudentName(''); setDescription(''); setCustomCategory(''); setShowCustom(false);
-            setActiveTab(finalCategory); // 작성한 탭으로 이동
-            showToast('명예의 전당에 등록되었습니다! 🏆');
-          };
-
-          const executeDelete = (id) => {
-            setDbData(prev => ({ ...prev, HallOfFame: prev.HallOfFame.filter(p => p.id !== id) }));
-            syncToServer('HallOfFame', 'DELETE', id, null);
-            showToast('기록이 삭제되었습니다.');
-          };
-
-          // 💡 핵심: 현재 선택된 탭(분야)에 해당하는 기록만 필터링
-          const filteredRecords = records.filter(r => r.category === activeTab);
-
-          return (
-            <div className="space-y-8">
-              <div className="bg-amber-100 p-8 rounded-[2.5rem] shadow-sm text-amber-900 relative overflow-hidden border border-amber-200">
-                <div className="absolute -right-4 -bottom-4 text-[8rem] opacity-30">🏆</div>
-                <h2 className="text-3xl font-black mb-2 relative z-10">명예의 전당</h2>
-                <p className="font-bold opacity-90 relative z-10">파도반을 빛낸 멋진 친구들을 기념하는 곳입니다!</p>
-              </div>
-
-              {currentUser.role === 'teacher' && (
-                <form onSubmit={handlePost} className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-amber-200 space-y-4">
-                  <h3 className="font-black text-lg text-amber-900">🎖️ 새로운 기록 등록</h3>
-                  <div className="flex gap-2">
-                    {!showCustom ? (
-                      <>
-                        <select value={categorySelect} onChange={e=>setCategorySelect(e.target.value)} className="w-1/3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-300 font-bold text-stone-800">
-                          {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                        <button type="button" onClick={() => setShowCustom(true)} className="bg-amber-200 hover:bg-amber-300 text-amber-800 font-black px-4 rounded-xl transition" title="분야 직접 추가">➕</button>
-                      </>
-                    ) : (
-                      <>
-                        <input type="text" placeholder="새로운 분야 이름" value={customCategory} onChange={e=>setCustomCategory(e.target.value)} className="w-1/3 bg-white border border-amber-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-400 font-bold text-stone-800" required />
-                        <button type="button" onClick={() => {setShowCustom(false); setCustomCategory('');}} className="bg-stone-200 hover:bg-stone-300 text-stone-600 font-black px-4 rounded-xl transition" title="취소">✕</button>
-                      </>
-                    )}
-                    <input type="text" placeholder="학생 이름" value={studentName} onChange={e=>setStudentName(e.target.value)} className="flex-1 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-300 font-bold text-stone-800" required />
-                  </div>
-                  <textarea placeholder="선정 이유 및 멋진 활약을 적어주세요." value={description} onChange={e=>setDescription(e.target.value)} rows="2" className="w-full bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-300 font-bold resize-none text-stone-800" required />
-                  <button type="submit" className="w-full bg-amber-400 text-amber-900 font-black py-4 rounded-xl shadow-md hover:bg-amber-500 transition border border-amber-500">전당에 올리기 🏆</button>
-                </form>
-              )}
-
-              {/* 💡 분야별 탭 버튼 */}
-              {allCategories.length > 0 && (
-                <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                  {allCategories.map(cat => (
-                    <button 
-                      key={cat} 
-                      onClick={() => setActiveTab(cat)}
-                      className={`whitespace-nowrap px-5 py-2.5 rounded-full font-black text-sm transition-all shadow-sm ${activeTab === cat ? 'bg-amber-400 text-white' : 'bg-white text-stone-500 hover:bg-amber-50 border border-stone-200'}`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {/* 💡 현재 탭에 맞는 기록만 보여줌 */}
-                {filteredRecords.length === 0 ? (
-                  <div className="col-span-full text-center py-10 text-amber-700 bg-white/50 border border-amber-100 rounded-[2rem] font-black">이 분야에 아직 등록된 기록이 없습니다.</div>
-                ) : (
-                  filteredRecords.map(record => (
-                    <div key={record.id} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-amber-200 flex flex-col justify-between relative overflow-hidden group">
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-amber-50 rounded-bl-[100px] -z-10 transition-transform group-hover:scale-110"></div>
-                      <div>
-                        <div className="flex justify-between items-start mb-4">
-                          <div>
-                            <span className="bg-amber-200 border border-amber-300 text-amber-900 text-xs font-black px-3 py-1 rounded-full">{safeText(record.category)}</span>
-                            <h4 className="font-black text-2xl text-stone-900 mt-2">{safeText(record.studentName)}</h4>
-                          </div>
-                          {currentUser.role === 'teacher' && (
-                            <button onClick={() => executeDelete(record.id)} className="text-rose-400 hover:text-rose-600 font-black text-xl bg-rose-50 p-2 rounded-full">✕</button>
-                          )}
-                        </div>
-                        <p className="text-stone-700 font-bold text-sm leading-relaxed mb-4">{safeText(record.description)}</p>
-                      </div>
-                      <div className="text-xs text-stone-500 font-bold text-right border-t border-stone-100 pt-3">{safeText(record.date)} 기록</div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          );
-        }
-
-        function AnnouncementManager({ currentUser, dbData, setDbData, syncToServer, showToast }) {
-          const [title, setTitle] = useState('');
-          const [content, setContent] = useState('');
-          const [link, setLink] = useState('');
-
-          const handlePost = (e) => {
-            e.preventDefault();
-            if (!title || !content) return;
-            const newPost = { id: Date.now().toString(), title, content, link, date: new Date().toISOString().split('T')[0], authorName: currentUser.name };
-            setDbData(prev => ({ ...prev, Announcements: [newPost, ...prev.Announcements] }));
-            syncToServer('Announcements', 'INSERT', null, newPost);
-            setTitle(''); setContent(''); setLink('');
-            showToast('알림장이 등록되었습니다. 📢');
-          };
-
-          return (
-            <div className="space-y-6">
-              {currentUser.role === 'teacher' && (
-                <form onSubmit={handlePost} className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-sky-100 space-y-4">
-                  <input type="text" placeholder="제목" value={title} onChange={e=>setTitle(e.target.value)} className="w-full bg-white border border-sky-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-sky-200 font-bold text-stone-800" required />
-                  <textarea placeholder="내용" value={content} onChange={e=>setContent(e.target.value)} rows="3" className="w-full bg-white border border-sky-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-sky-200 font-bold resize-none text-stone-800" required />
-                  <input type="url" placeholder="첨부 링크 (https://...)" value={link} onChange={e=>setLink(e.target.value)} className="w-full bg-white border border-sky-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-sky-200 font-bold text-stone-800" />
-                  <button type="submit" className="w-full bg-sky-400 hover:bg-sky-500 text-white font-black py-4 rounded-xl shadow-md transition border border-sky-500">알림장 쓰기</button>
-                </form>
-              )}
-              <div className="space-y-4">
-                {dbData.Announcements.length === 0 && <div className="text-center py-10 text-sky-600 font-black bg-white/50 border border-sky-100 rounded-[2rem]">등록된 알림장이 없습니다.</div>}
-                {dbData.Announcements.map(ann => (
-                  <div key={ann.id} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-sky-100">
-                    <h4 className="font-black text-xl text-sky-900 mb-1">{safeText(ann.title)}</h4>
-                    <span className="text-xs text-sky-500 font-bold mb-4 block">{safeText(ann.date)}</span>
-                    <p className="text-stone-700 font-bold leading-relaxed whitespace-pre-wrap">{safeText(ann.content)}</p>
-                    {ann.link && <a href={ann.link} target="_blank" rel="noreferrer" className="inline-block mt-4 bg-sky-50 border border-sky-100 text-sky-700 px-4 py-2 rounded-xl font-black text-sm hover:bg-sky-100 transition">🔗 링크 열기</a>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        }
-
         function Shop({ currentUser, dbData, setDbData, updateStudentData, syncToServer, showToast }) {
           const [showUpload, setShowUpload] = useState(false);
           const [newItemName, setNewItemName] = useState('');
@@ -1766,7 +1658,21 @@
           const handleBuy = (item) => {
             if (ownedItems.some(id => String(id) === String(item.id))) return showToast('이미 가진 아이템이에요!');
             if (currentUser.money < item.price) return showToast('돈이 부족해요!');
+            
             updateStudentData(currentUser.id, { money: Number(currentUser.money || 0) - item.price, ownedItems: [...ownedItems, item.id] });
+            
+            // 💡 구매 내역 기록 추가 로직
+            const newLog = {
+              id: Date.now().toString(),
+              studentName: currentUser.name,
+              itemName: item.name,
+              price: item.price,
+              date: new Date().toISOString()
+            };
+
+            setDbData(prev => ({ ...prev, PurchaseLogs: [newLog, ...(prev.PurchaseLogs || [])] }));
+            syncToServer('PurchaseLogs', 'INSERT', null, newLog);
+
             showToast(`${item.name} 구매 완료! 🛍️`);
           };
 
