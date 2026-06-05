@@ -32,7 +32,7 @@
       const { useState, useEffect } = React;
 
       // ==========================================
-      // 💡 선생님의 웹앱 URL
+      // 💡 선생님의 진짜 웹앱 URL
       // ==========================================
       const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzev5JeOhBVHDe1Uy6EIFSEOH_BEP2YTncgLjrQB4kRIWc-hCk3uv0hbrcdoiHjAMIj/exec?api=true'; 
       const EXP_PER_LEVEL = 100;
@@ -69,10 +69,12 @@
         const [loading, setLoading] = useState(true);
         const [syncing, setSyncing] = useState(false);
         
-        // 💡 1. 자동 로그인 및 교사 전용 '마법의 링크' 설정
+        // 자동 로그인 및 교사 프리패스 링크 설정
         const [currentUser, setCurrentUser] = useState(() => {
           const params = new URLSearchParams(window.location.search);
-          if (params.get('teacher') === 'true') return { role: 'teacher', name: '선생님' };
+          if (params.get('teacher') === 'true') {
+             return { role: 'teacher', name: '윤은철' };
+          }
           
           const savedUser = localStorage.getItem('padoUser');
           if (savedUser) {
@@ -206,7 +208,6 @@
           
           if (user) {
             setCurrentUser(user);
-            // 💡 2. 로그인 성공 시 브라우저에 사용자 정보 기억시키기
             localStorage.setItem('padoUser', JSON.stringify(user));
             setLoginError('');
             showToast(`환영합니다, ${user.name}님! 🌊`);
@@ -349,7 +350,6 @@
 
                   <span className="font-bold text-orange-900 bg-orange-100 px-3 py-1.5 rounded-full text-sm">{safeText(currentUser.name)} {currentUser.role === 'teacher' ? '선생님' : '학생'}</span>
                   
-                  {/* 💡 3. 로그아웃 시 브라우저 기억 삭제 및 마법의 링크 초기화 */}
                   <button onClick={() => {
                     setCurrentUser(null);
                     localStorage.removeItem('padoUser'); 
@@ -503,7 +503,7 @@
 
         const tabs = [
             { id: 'students', label: '학급 관리', icon: '🌱' },
-            { id: 'records', label: '기록 관리', icon: '📈' }, // 💡 기록 관리 탭 추가
+            { id: 'records', label: '기록 관리', icon: '📈' }, 
             { id: 'tasks', label: '할 일', icon: '📝' },
             { id: 'emotions', label: '마음 일기', icon: '🫧' },
             { id: 'announcements', label: '알림장', icon: '📢' },
@@ -574,7 +574,6 @@
           );
       }
 
-      // 💡 [교사 전용] 학생 기록 관리 컴포넌트 추가
       function RecordManagerTeacher({ dbData, setDbData, syncToServer, showToast, students }) {
         const [newCategoryName, setNewCategoryName] = useState('');
         
@@ -646,7 +645,6 @@
               <p className="font-bold opacity-90 relative z-10">시험 성적, 활동 결과 등을 누적해서 기록해주세요.</p>
             </div>
 
-            {/* 과목/분야 관리 */}
             <div className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-blue-100 space-y-4">
               <h3 className="font-black text-lg text-blue-900">📚 과목 및 분야 관리</h3>
               <form onSubmit={handleAddCategory} className="flex gap-2">
@@ -663,7 +661,6 @@
               </div>
             </div>
 
-            {/* 새로운 기록 추가 */}
             <form onSubmit={handleAddRecord} className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-indigo-100 space-y-4">
               <h3 className="font-black text-lg text-indigo-900">✏️ 새로운 기록 추가</h3>
               
@@ -691,7 +688,6 @@
               <button type="submit" className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-black py-4 rounded-xl shadow-md transition">학생 기록 저장하기</button>
             </form>
 
-            {/* 등록된 기록 리스트 */}
             <div className="space-y-4">
               <h3 className="font-black text-lg text-stone-800 ml-2">📋 최근 등록된 기록</h3>
               {records.length === 0 ? (
@@ -1310,7 +1306,7 @@
 
         const navItems = [
           { id: 'profile', label: '내 정보', icon: '🐳' },
-          { id: 'records', label: '나의 기록', icon: '📈' }, // 💡 나의 기록 탭 추가
+          { id: 'records', label: '나의 기록', icon: '📈' }, 
           { id: 'tasks', label: '할 일', icon: '📝', badge: unsubmittedTasksCount },
           { id: 'emotions', label: '마음 일기', icon: '🫧' },
           { id: 'halloffame', label: '명예의 전당', icon: '🏆' },
@@ -1356,7 +1352,6 @@
         );
       }
 
-      // 💡 [학생 전용] 나의 기록 조회 컴포넌트 추가
       function StudentRecords({ currentUser, dbData }) {
         const records = Array.isArray(dbData.Records) ? dbData.Records : [];
         const myRecords = records.filter(r => r.studentId === currentUser.id).sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -1555,7 +1550,7 @@
                     const isEquipped = equippedItems.some(id => String(id) === String(itemId));
                     return (
                       <button key={itemId || idx} onClick={() => toggleEquip(itemId)} className={`flex flex-col items-center p-4 rounded-3xl border-2 transition-all ${isEquipped ? 'border-pink-300 bg-pink-50 shadow-md' : 'border-white bg-stone-50 hover:border-pink-200'}`}>
-                        <div className="w-16 h-16 mb-3 flex items-center justify-center bg-white rounded-2xl border border-stone-100 shadow-sm">
+                        <div className="w-16 h-16 mb-3 flex items-center justify-center bg-white rounded-2xl shadow-sm border border-stone-100">
                           {isImageUrl(item.icon) ? <img src={item.icon} alt={item.name} className="w-full h-full object-contain p-2" /> : <span className="text-4xl">{safeText(item.icon)}</span>}
                         </div>
                         <span className="text-xs font-black text-stone-700 text-center break-keep">{safeText(item.name)}</span>
@@ -1569,10 +1564,6 @@
           </div>
         );
       }
-
-      // ==========================================
-      // 공지사항, 승인관리 및 기타 유틸
-      // ==========================================
 
       function EmotionBoard({ currentUser, dbData, setDbData, syncToServer, showToast, updateStudentData }) {
         const moodZones = {
@@ -1616,7 +1607,7 @@
             date: new Date().toISOString().split('T')[0], 
             isSecret,
             likes: [],
-            aiReply: aiReplyText 
+            aiReply: aiReplyText
           };
           
           setDbData(prev => ({ ...prev, Emotions: [newPost, ...(prev.Emotions || [])] }));
@@ -1996,7 +1987,7 @@
                       </div>
                       <p className="text-slate-700 font-bold text-sm leading-relaxed mb-4">{safeText(record.description)}</p>
                     </div>
-                    <div className="text-xs text-stone-500 font-bold text-right border-t border-stone-100 pt-3">{safeText(record.date)} 기록</div>
+                    <div className="text-xs text-stone-500 font-bold text-right border-t border-slate-100 pt-3">{safeText(record.date)} 기록</div>
                   </div>
                 ))
               )}
@@ -2084,9 +2075,9 @@
 
         return (
           <div className="space-y-6">
-            <div className="flex justify-between items-center bg-white/80 p-5 rounded-[2rem] border border-amber-100 shadow-sm">
-              <div className="font-black text-amber-800 text-lg">내 지갑</div>
-              <div className="text-2xl font-black text-amber-600 bg-amber-50 border border-amber-200 px-4 py-2 rounded-2xl">🪙 {currentUser.money}</div>
+            <div className="flex justify-between items-center bg-white/90 p-5 rounded-[2rem] border border-amber-200 shadow-sm">
+              <div className="font-black text-amber-900 text-lg">내 지갑</div>
+              <div className="text-2xl font-black text-amber-700 bg-amber-100 border border-amber-300 px-4 py-2 rounded-2xl">🪙 {currentUser.money}</div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
               {shopItems.map((item, idx) => {
@@ -2100,7 +2091,7 @@
                     <div className="font-black text-slate-800 mb-1">{safeText(item.name)}</div>
                     <div className="text-sky-700 font-black mb-4">{item.price} 원</div>
                     <div className="mt-auto">
-                      <button onClick={() => handleBuy(item)} disabled={isOwned} className={`w-full py-3 rounded-xl text-sm font-black transition-all ${isOwned ? 'bg-slate-100 text-slate-400 border border-slate-200' : 'bg-sky-400 text-white border border-sky-500 shadow-md hover:bg-sky-500 hover:-translate-y-1'}`}>
+                      <button onClick={() => handleBuy(item)} disabled={isOwned} className={`w-full py-3 rounded-xl text-sm font-black transition-all ${isOwned ? 'bg-slate-200 text-slate-500 border border-slate-300' : 'bg-sky-400 text-white border border-sky-500 shadow-md hover:bg-sky-500 hover:-translate-y-1'}`}>
                         {isOwned ? '보유중' : '구매하기'}
                       </button>
                     </div>
@@ -2109,7 +2100,7 @@
               })}
             </div>
             <div className="mt-8">
-              <button onClick={() => setShowUpload(!showUpload)} className="w-full bg-white/80 text-sky-700 font-black py-5 rounded-[2rem] shadow-sm border border-sky-200 hover:bg-sky-50 transition">
+              <button onClick={() => setShowUpload(!showUpload)} className="w-full bg-white/90 text-sky-800 font-black py-5 rounded-[2rem] shadow-sm border border-sky-300 hover:bg-sky-50 transition">
                 📤 아이템 제안하기
               </button>
               {showUpload && (
@@ -2226,7 +2217,6 @@
         );
       }
 
-      // 화면에 렌더링
       const root = ReactDOM.createRoot(document.getElementById('root'));
       root.render(<App />);
     </script>
