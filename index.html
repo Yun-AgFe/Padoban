@@ -68,7 +68,19 @@
       function App() {
         const [loading, setLoading] = useState(true);
         const [syncing, setSyncing] = useState(false);
-        const [currentUser, setCurrentUser] = useState(null);
+        
+        // 💡 1. 자동 로그인 및 교사 전용 '마법의 링크' 설정
+        const [currentUser, setCurrentUser] = useState(() => {
+          const params = new URLSearchParams(window.location.search);
+          if (params.get('teacher') === 'true') return { role: 'teacher', name: '선생님' };
+          
+          const savedUser = localStorage.getItem('padoUser');
+          if (savedUser) {
+            try { return JSON.parse(savedUser); } catch(e) {}
+          }
+          return null;
+        });
+        
         const [missingDbSheets, setMissingDbSheets] = useState([]);
         const [toastMsg, setToastMsg] = useState('');
         
@@ -194,6 +206,8 @@
           
           if (user) {
             setCurrentUser(user);
+            // 💡 2. 로그인 성공 시 브라우저에 사용자 정보 기억시키기
+            localStorage.setItem('padoUser', JSON.stringify(user));
             setLoginError('');
             showToast(`환영합니다, ${user.name}님! 🌊`);
 
@@ -328,9 +342,19 @@
                 </h1>
                 <div className="flex items-center gap-4">
                   {syncing && <span className="animate-spin inline-block text-orange-400">🔄</span>}
-                  <button onClick={fetchData} className="p-2 text-stone-500 hover:text-sky-600 transition" title="새로고침">🔄</button>
+                  
+                  <button onClick={fetchData} className="p-2 text-stone-500 hover:text-sky-600 transition" title="새로고침">
+                    🔄
+                  </button>
+
                   <span className="font-bold text-orange-900 bg-orange-100 px-3 py-1.5 rounded-full text-sm">{safeText(currentUser.name)} {currentUser.role === 'teacher' ? '선생님' : '학생'}</span>
-                  <button onClick={() => setCurrentUser(null)} className="p-2 text-2xl hover:scale-110 transition drop-shadow-sm" title="로그아웃">🚪</button>
+                  
+                  {/* 💡 3. 로그아웃 시 브라우저 기억 삭제 및 마법의 링크 초기화 */}
+                  <button onClick={() => {
+                    setCurrentUser(null);
+                    localStorage.removeItem('padoUser'); 
+                    window.history.replaceState({}, document.title, window.location.pathname); 
+                  }} className="p-2 text-2xl hover:scale-110 transition drop-shadow-sm" title="로그아웃">🚪</button>
                 </div>
               </div>
             </header>
@@ -1391,9 +1415,6 @@
         const [isEditingIntro, setIsEditingIntro] = useState(false);
         const [introText, setIntroText] = useState(currentUser.intro || '');
         
-        const [isEditingFace, setIsEditingFace] = useState(false);
-        const [faceUrlText, setFaceUrlText] = useState(currentUser.faceUrl || '');
-
         const toggleEquip = (itemId) => {
           let newEquipped = [...equippedItems];
           if (newEquipped.some(id => String(id) === String(itemId))) {
@@ -1417,12 +1438,6 @@
           if(showToast) showToast('소개말 저장 완료!');
         };
 
-        const saveFaceUrl = () => {
-          updateStudentData(currentUser.id, { faceUrl: faceUrlText });
-          setIsEditingFace(false);
-          if(showToast) showToast('얼굴 사진 변경 완료!');
-        };
-
         const equippedIcons = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon || '');
 
         return (
@@ -1432,7 +1447,7 @@
               
               <div className="relative flex flex-col items-center">
                 <div className="relative w-40 h-40 bg-gradient-to-tr from-orange-50 to-sky-50 rounded-full flex items-center justify-center shadow-inner border-[6px] border-white shrink-0 overflow-hidden">
-                  {/* 장착한 아이템이 없을 때만 아바타 표시 */}
+                  {/* 장착한 아이템이 없을 때만 기본 아바타 표시 */}
                   {equippedIcons.length === 0 && (
                     <span className="text-[5rem] drop-shadow-md text-orange-400">
                       {currentUser.gender === 'M' ? '👦' : (currentUser.gender === 'F' ? '👧' : '👤')}
@@ -1451,7 +1466,7 @@
                   <div>
                     <div className="flex gap-2 mb-2 flex-wrap">
                       {currentUser.title && <span className="bg-orange-100 text-orange-900 text-sm font-black px-4 py-1.5 rounded-full inline-block shadow-sm border border-orange-200">✨ {safeText(currentUser.title)}</span>}
-                      {currentJob && <span className="bg-indigo-100 text-indigo-900 text-sm font-black px-4 py-1.5 rounded-full inline-block shadow-sm border border-indigo-200">💼 {safeText(currentJob.name)}</span>}
+                      {currentJob && <span className="bg-indigo-100 text-indigo-900 text-sm font-black px-4 py-1.5 rounded-full inline-block shadow-sm border border-indigo-200">💼 {safeText(currentJob.name)} (월 {currentJob.salary}원)</span>}
                     </div>
                     <h2 className="text-3xl font-black text-stone-800 mt-1">{safeText(currentUser.name)}</h2>
                   </div>
@@ -1803,6 +1818,229 @@
                 </div>
               </div>
             )}
+
+            {selectedStudentProfile && <StudentProfileModal student={selectedStudentProfile} shopItems={dbData.ShopItems} jobs={dbData.Jobs} onClose={() => setSelectedStudentProfile(null)} />}
+          </div>
+        );
+      }
+
+      function StudentProfileModal({ student, shopItems, jobs, onClose }) {
+        if (!student) return null;
+        const currentExp = student.exp % EXP_PER_LEVEL;
+        const expPercent = (currentExp / EXP_PER_LEVEL) * 100;
+        const equippedItems = Array.isArray(student.equippedItems) ? student.equippedItems : [];
+        const safeShopItems = Array.isArray(shopItems) ? shopItems : [];
+        const safeJobs = Array.isArray(jobs) ? jobs : [];
+        const currentJob = safeJobs.find(j => j.name === student.job);
+        const equippedIcons = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon).filter(Boolean);
+
+        return (
+          <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={onClose}>
+            <div className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl relative overflow-hidden border-4 border-orange-200" onClick={e => e.stopPropagation()}>
+              <div className="absolute top-0 right-0 w-40 h-40 bg-orange-100 rounded-full blur-3xl opacity-50 -z-10 -translate-y-1/2 translate-x-1/2"></div>
+              
+              <button onClick={onClose} className="absolute top-5 right-5 text-stone-400 hover:text-stone-700 bg-stone-100 p-2 rounded-full font-black">✕</button>
+
+              <div className="flex flex-col items-center gap-4 mb-6 mt-4">
+                <div className="relative w-32 h-32 bg-orange-50 rounded-full flex items-center justify-center shadow-inner border-[6px] border-white overflow-hidden">
+                   {/* 장착한 아이템이 없을 때만 아바타 표시 */}
+                   {equippedIcons.length === 0 && (
+                     <span className="text-[4rem] drop-shadow-md text-orange-400">
+                       {student.gender === 'M' ? '👦' : (student.gender === 'F' ? '👧' : '👤')}
+                     </span>
+                   )}
+                   <div className="absolute inset-0 flex items-center justify-center drop-shadow-md pointer-events-none">
+                     {equippedIcons.map((icon, idx) => (
+                       isImageUrl(icon) ? <img key={idx} src={icon} alt="장착" className="absolute w-24 h-24 object-contain" /> : <span key={idx} className="absolute text-[4rem]">{safeText(icon)}</span>
+                     ))}
+                   </div>
+                </div>
+                
+                <div className="text-center">
+                  <div className="flex gap-2 mb-2 justify-center flex-wrap">
+                    {student.title && <span className="bg-orange-100 text-orange-900 text-xs font-black px-4 py-1.5 rounded-full inline-block shadow-sm border border-orange-200">✨ {safeText(student.title)}</span>}
+                    {currentJob && <span className="bg-indigo-100 text-indigo-900 text-xs font-black px-4 py-1.5 rounded-full inline-block shadow-sm border border-indigo-200">💼 {safeText(currentJob.name)}</span>}
+                  </div>
+                  <div className="text-3xl font-black text-stone-800">{safeText(student.name)}</div>
+                </div>
+              </div>
+
+              <div className="bg-sky-50/80 p-5 rounded-3xl border border-sky-100 mb-6 text-center shadow-sm">
+                <span className="text-xs font-black text-sky-600 block mb-2">💬 한 줄 소개</span>
+                <div className="text-sm font-bold text-stone-700 break-keep">
+                  {student.intro || <span className="text-sky-400">아직 소개를 작성하지 않았어요.</span>}
+                </div>
+              </div>
+
+              <div className="space-y-3 bg-stone-50 p-5 rounded-3xl border border-stone-100">
+                <div className="flex justify-between items-center bg-white p-3 rounded-2xl shadow-sm border border-stone-50">
+                  <span className="text-sm font-black text-stone-500">가진 돈</span>
+                  <span className="font-black text-amber-600 text-lg">🪙 {student.money}원</span>
+                </div>
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-stone-50">
+                  <div className="flex justify-between font-black mb-2"><span className="text-sky-600 text-sm">Level {student.level}</span> <span className="text-sky-400 text-xs">{currentExp} / {EXP_PER_LEVEL}</span></div>
+                  <div className="h-3 bg-sky-100 rounded-full overflow-hidden shadow-inner"><div className="h-full bg-sky-400" style={{ width: `${expPercent}%` }}></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function HallOfFameManager({ currentUser, dbData, setDbData, syncToServer, showToast }) {
+        const records = Array.isArray(dbData.HallOfFame) ? dbData.HallOfFame : [];
+        
+        const defaultCategories = ['스포츠', '곱셈', '나눗셈', '가가볼'];
+        const existingCategories = [...new Set(records.map(r => r.category))];
+        const allCategories = [...new Set([...defaultCategories, ...existingCategories])].filter(Boolean);
+        
+        const [activeTab, setActiveTab] = useState(allCategories[0] || '스포츠');
+        
+        const [categorySelect, setCategorySelect] = useState(allCategories[0] || '');
+        const [customCategory, setCustomCategory] = useState('');
+        const [showCustom, setShowCustom] = useState(false);
+        
+        const [studentName, setStudentName] = useState('');
+        const [description, setDescription] = useState('');
+
+        useEffect(() => {
+          if (!allCategories.includes(activeTab) && allCategories.length > 0) {
+            setActiveTab(allCategories[0]);
+          }
+        }, [allCategories, activeTab]);
+
+        const handlePost = (e) => {
+          e.preventDefault();
+          const finalCategory = showCustom ? customCategory.trim() : categorySelect;
+          if (!finalCategory || !studentName || !description) return;
+          
+          const newPost = { id: Date.now().toString(), category: finalCategory, studentName, description, date: new Date().toISOString().split('T')[0] };
+          setDbData(prev => ({ ...prev, HallOfFame: [newPost, ...(prev.HallOfFame || [])] }));
+          syncToServer('HallOfFame', 'INSERT', null, newPost);
+          
+          setStudentName(''); setDescription(''); setCustomCategory(''); setShowCustom(false);
+          setActiveTab(finalCategory); 
+          showToast('명예의 전당에 등록되었습니다! 🏆');
+        };
+
+        const executeDelete = (id) => {
+          setDbData(prev => ({ ...prev, HallOfFame: prev.HallOfFame.filter(p => p.id !== id) }));
+          syncToServer('HallOfFame', 'DELETE', id, null);
+          showToast('기록이 삭제되었습니다.');
+        };
+
+        const filteredRecords = records.filter(r => r.category === activeTab);
+
+        return (
+          <div className="space-y-8">
+            <div className="bg-amber-100 p-8 rounded-[2.5rem] shadow-sm text-amber-900 relative overflow-hidden border border-amber-200">
+              <div className="absolute -right-4 -bottom-4 text-[8rem] opacity-30">🏆</div>
+              <h2 className="text-3xl font-black mb-2 relative z-10">명예의 전당</h2>
+              <p className="font-bold opacity-90 relative z-10">파도반을 빛낸 멋진 친구들을 기념하는 곳입니다!</p>
+            </div>
+
+            {currentUser.role === 'teacher' && (
+              <form onSubmit={handlePost} className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-amber-200 space-y-4">
+                <h3 className="font-black text-lg text-amber-900">🎖️ 새로운 기록 등록</h3>
+                <div className="flex gap-2">
+                  {!showCustom ? (
+                    <>
+                      <select value={categorySelect} onChange={e=>setCategorySelect(e.target.value)} className="w-1/3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-300 font-bold text-stone-800">
+                        {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <button type="button" onClick={() => setShowCustom(true)} className="bg-amber-200 hover:bg-amber-300 text-amber-800 font-black px-4 rounded-xl transition" title="분야 직접 추가">➕</button>
+                    </>
+                  ) : (
+                    <>
+                      <input type="text" placeholder="새로운 분야 이름" value={customCategory} onChange={e=>setCustomCategory(e.target.value)} className="w-1/3 bg-white border border-amber-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-400 font-bold text-stone-800" required />
+                      <button type="button" onClick={() => {setShowCustom(false); setCustomCategory('');}} className="bg-stone-200 hover:bg-stone-300 text-stone-600 font-black px-4 rounded-xl transition" title="취소">✕</button>
+                    </>
+                  )}
+                  <input type="text" placeholder="학생 이름" value={studentName} onChange={e=>setStudentName(e.target.value)} className="flex-1 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-300 font-bold text-stone-800" required />
+                </div>
+                <textarea placeholder="선정 이유 및 멋진 활약을 적어주세요." value={description} onChange={e=>setDescription(e.target.value)} rows="2" className="w-full bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-300 font-bold resize-none text-stone-800" required />
+                <button type="submit" className="w-full bg-amber-400 text-amber-900 font-black py-4 rounded-xl shadow-md hover:bg-amber-500 transition border border-amber-500">전당에 올리기 🏆</button>
+              </form>
+            )}
+
+            {allCategories.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                {allCategories.map(cat => (
+                  <button 
+                    key={cat} 
+                    onClick={() => setActiveTab(cat)}
+                    className={`whitespace-nowrap px-5 py-2.5 rounded-full font-black text-sm transition-all shadow-sm ${activeTab === cat ? 'bg-amber-400 text-white' : 'bg-white text-stone-500 hover:bg-amber-50 border border-stone-200'}`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {filteredRecords.length === 0 ? (
+                <div className="col-span-full text-center py-10 text-amber-700 bg-white/50 border border-amber-100 rounded-[2rem] font-black">이 분야에 아직 등록된 기록이 없습니다.</div>
+              ) : (
+                filteredRecords.map(record => (
+                  <div key={record.id} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-amber-200 flex flex-col justify-between relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-amber-50 rounded-bl-[100px] -z-10 transition-transform group-hover:scale-110"></div>
+                    <div>
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <span className="bg-amber-200 border border-amber-300 text-amber-900 text-xs font-black px-3 py-1 rounded-full">{safeText(record.category)}</span>
+                          <h4 className="font-black text-2xl text-stone-900 mt-2">{safeText(record.studentName)}</h4>
+                        </div>
+                        {currentUser.role === 'teacher' && (
+                          <button onClick={() => executeDelete(record.id)} className="text-rose-400 hover:text-rose-600 font-black text-xl bg-rose-50 p-2 rounded-full">✕</button>
+                        )}
+                      </div>
+                      <p className="text-slate-700 font-bold text-sm leading-relaxed mb-4">{safeText(record.description)}</p>
+                    </div>
+                    <div className="text-xs text-stone-500 font-bold text-right border-t border-stone-100 pt-3">{safeText(record.date)} 기록</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      function AnnouncementManager({ currentUser, dbData, setDbData, syncToServer, showToast }) {
+        const [title, setTitle] = useState('');
+        const [content, setContent] = useState('');
+        const [link, setLink] = useState('');
+
+        const handlePost = (e) => {
+          e.preventDefault();
+          if (!title || !content) return;
+          const newPost = { id: Date.now().toString(), title, content, link, date: new Date().toISOString().split('T')[0], authorName: currentUser.name };
+          setDbData(prev => ({ ...prev, Announcements: [newPost, ...prev.Announcements] }));
+          syncToServer('Announcements', 'INSERT', null, newPost);
+          setTitle(''); setContent(''); setLink('');
+          showToast('알림장이 등록되었습니다. 📢');
+        };
+
+        return (
+          <div className="space-y-6">
+            {currentUser.role === 'teacher' && (
+              <form onSubmit={handlePost} className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-sky-100 space-y-4">
+                <input type="text" placeholder="제목" value={title} onChange={e=>setTitle(e.target.value)} className="w-full bg-white border border-sky-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-sky-200 font-bold text-stone-800" required />
+                <textarea placeholder="내용" value={content} onChange={e=>setContent(e.target.value)} rows="3" className="w-full bg-white border border-sky-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-sky-200 font-bold resize-none text-stone-800" required />
+                <input type="url" placeholder="첨부 링크 (https://...)" value={link} onChange={e=>setLink(e.target.value)} className="w-full bg-white border border-sky-100 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-sky-200 font-bold text-stone-800" />
+                <button type="submit" className="w-full bg-sky-400 hover:bg-sky-500 text-white font-black py-4 rounded-xl shadow-md transition border border-sky-500">알림장 쓰기</button>
+              </form>
+            )}
+            <div className="space-y-4">
+              {dbData.Announcements.length === 0 && <div className="text-center py-10 text-sky-600 font-black bg-white/50 border border-sky-100 rounded-[2rem]">등록된 알림장이 없습니다.</div>}
+              {dbData.Announcements.map(ann => (
+                <div key={ann.id} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-sky-100">
+                  <h4 className="font-black text-xl text-sky-900 mb-1">{safeText(ann.title)}</h4>
+                  <span className="text-xs text-sky-500 font-bold mb-4 block">{safeText(ann.date)}</span>
+                  <p className="text-stone-700 font-bold leading-relaxed whitespace-pre-wrap">{safeText(ann.content)}</p>
+                  {ann.link && <a href={ann.link} target="_blank" rel="noreferrer" className="inline-block mt-4 bg-sky-50 border border-sky-100 text-sky-700 px-4 py-2 rounded-xl font-black text-sm hover:bg-sky-100 transition">🔗 링크 열기</a>}
+                </div>
+              ))}
+            </div>
           </div>
         );
       }
@@ -1817,7 +2055,20 @@
         const handleBuy = (item) => {
           if (ownedItems.some(id => String(id) === String(item.id))) return showToast('이미 가진 아이템이에요!');
           if (currentUser.money < item.price) return showToast('돈이 부족해요!');
+          
           updateStudentData(currentUser.id, { money: Number(currentUser.money || 0) - item.price, ownedItems: [...ownedItems, item.id] });
+          
+          const newLog = {
+            id: Date.now().toString(),
+            studentName: currentUser.name,
+            itemName: item.name,
+            price: item.price,
+            date: new Date().toISOString()
+          };
+
+          setDbData(prev => ({ ...prev, PurchaseLogs: [newLog, ...(prev.PurchaseLogs || [])] }));
+          syncToServer('PurchaseLogs', 'INSERT', null, newLog);
+
           showToast(`${item.name} 구매 완료! 🛍️`);
         };
 
@@ -1869,6 +2120,106 @@
                   </div>
                   <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 border border-sky-700 text-white font-black py-4 rounded-xl shadow-md transition">선생님께 보내기</button>
                 </form>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      function ApprovalManager({ dbData, setDbData, syncToServer, showToast }) {
+        const handleApprove = (item) => {
+          const newItem = { id: Date.now().toString(), name: item.itemName, icon: item.icon, price: 500, type: item.type };
+          setDbData(prev => ({ ...prev, ShopItems: [...prev.ShopItems, newItem], PendingItems: prev.PendingItems.filter(i => i.id !== item.id) }));
+          syncToServer('ShopItems', 'INSERT', null, newItem); syncToServer('PendingItems', 'DELETE', item.id, null);
+          showToast('승인 완료!');
+        };
+        const handleReject = (id) => {
+          setDbData(prev => ({ ...prev, PendingItems: prev.PendingItems.filter(i => i.id !== id) }));
+          syncToServer('PendingItems', 'DELETE', id, null);
+          showToast('거절 완료.');
+        };
+        if (dbData.PendingItems.length === 0) return <div className="text-center py-10 text-sky-700 bg-white/50 border border-sky-100 font-black rounded-[2rem]">대기중인 아이템이 없습니다.</div>;
+        return (
+          <div className="space-y-4">
+            {dbData.PendingItems.map(item => (
+              <div key={item.id} className="bg-white/95 p-5 rounded-[2rem] shadow-sm border border-sky-200 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="bg-stone-50 w-16 h-16 rounded-2xl flex items-center justify-center border border-stone-200">
+                    {isImageUrl(item.icon) ? <img src={item.icon} alt={item.itemName} className="w-full h-full object-contain p-1" /> : <span className="text-4xl">{safeText(item.icon)}</span>}
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-sky-600 mb-1">{safeText(item.studentName)}의 제안</div>
+                    <div className="font-black text-lg text-stone-900">{safeText(item.itemName)}</div>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => handleApprove(item)} className="bg-emerald-400 text-white border border-emerald-500 px-4 py-3 rounded-xl font-black shadow-sm hover:bg-emerald-500 transition">승인</button>
+                  <button onClick={() => handleReject(item.id)} className="bg-rose-400 text-white border border-rose-500 px-4 py-3 rounded-xl font-black shadow-sm hover:bg-rose-500 transition">거절</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      }
+
+      function JobManager({ currentUser, dbData, setDbData, syncToServer, showToast }) {
+        const [jobName, setJobName] = useState('');
+        const [jobSalary, setJobSalary] = useState('');
+
+        const handlePost = (e) => {
+          e.preventDefault();
+          if (!jobName || !jobSalary) return;
+          const newJob = { id: Date.now().toString(), name: jobName, salary: Number(jobSalary) };
+          setDbData(prev => ({ ...prev, Jobs: [...(prev.Jobs || []), newJob] }));
+          syncToServer('Jobs', 'INSERT', null, newJob);
+          setJobName(''); setJobSalary('');
+          showToast('새로운 직업이 등록되었습니다! 💼');
+        };
+
+        const executeDelete = (id) => {
+          setDbData(prev => ({ ...prev, Jobs: prev.Jobs.filter(j => j.id !== id) }));
+          syncToServer('Jobs', 'DELETE', id, null);
+          showToast('직업이 삭제되었습니다.');
+        };
+
+        const jobs = Array.isArray(dbData.Jobs) ? dbData.Jobs : [];
+
+        return (
+          <div className="space-y-8">
+            <div className="bg-indigo-100 p-8 rounded-[2.5rem] shadow-sm text-indigo-900 relative overflow-hidden border border-indigo-200">
+              <div className="absolute -right-4 -bottom-4 text-[8rem] opacity-30">💼</div>
+              <h2 className="text-3xl font-black mb-2 relative z-10">직업 관리</h2>
+              <p className="font-bold opacity-90 relative z-10">우리 반 친구들의 멋진 직업과 월급을 설정해주세요!</p>
+            </div>
+
+            <form onSubmit={handlePost} className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-indigo-100 space-y-4">
+              <h3 className="font-black text-lg text-indigo-900">💼 새로운 직업 등록</h3>
+              <div className="flex gap-4">
+                <input type="text" placeholder="직업 이름 (예: 은행원)" value={jobName} onChange={e=>setJobName(e.target.value)} className="w-2/3 bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800 shadow-inner" required />
+                <input type="number" placeholder="월급 (예: 500)" value={jobSalary} onChange={e=>setJobSalary(e.target.value)} className="w-1/3 bg-stone-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-300 font-bold text-stone-800 shadow-inner" required />
+              </div>
+              <button type="submit" className="w-full bg-indigo-500 text-white font-black py-4 rounded-xl shadow-md hover:bg-indigo-600 transition">직업 만들기</button>
+            </form>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              {jobs.length === 0 ? (
+                <div className="col-span-full text-center py-10 text-indigo-400 font-black bg-white/50 border border-indigo-100 rounded-[2rem]">아직 등록된 직업이 없습니다.</div>
+              ) : (
+                jobs.map(job => (
+                  <div key={job.id} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-indigo-100 flex flex-col justify-between relative overflow-hidden group">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <span className="bg-indigo-100 text-indigo-800 text-xs font-black px-3 py-1 rounded-full">💼 직업</span>
+                        <h4 className="font-black text-xl text-stone-800 mt-2">{safeText(job.name)}</h4>
+                      </div>
+                      <button onClick={() => executeDelete(job.id)} className="text-stone-300 hover:text-rose-500 font-black text-xl bg-rose-50 w-8 h-8 flex items-center justify-center rounded-full transition-colors" title="삭제">✕</button>
+                    </div>
+                    <div className="mt-4 pt-3 border-t border-stone-50">
+                      <span className="text-sm font-bold text-stone-500">월급:</span>
+                      <span className="font-black text-amber-600 ml-2">🪙 {job.salary}원</span>
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           </div>
