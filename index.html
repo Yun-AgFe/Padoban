@@ -89,7 +89,7 @@
         const [showPwdModal, setShowPwdModal] = useState(false);
 
         const [dbData, setDbData] = useState({
-          Users: [], Announcements: [], ShopItems: [], PendingItems: [], Emotions: [], HallOfFame: [], Tasks: [], Jobs: [], PurchaseLogs: [], Records: [], RecordCategories: []
+          Users: [], Announcements: [], ShopItems: [], PendingItems: [], Emotions: [], HallOfFame: [], Tasks: [], Jobs: [], PurchaseLogs: [], Records: [], RecordCategories: [], Letters: []
         });
 
         const [loginName, setLoginName] = useState('');
@@ -107,7 +107,7 @@
             const res = await fetch(SCRIPT_URL);
             const data = await res.json();
             
-            const requiredSheets = ['Users', 'Announcements', 'ShopItems', 'PendingItems', 'Emotions', 'HallOfFame', 'Tasks', 'Jobs', 'PurchaseLogs', 'Records', 'RecordCategories'];
+            const requiredSheets = ['Users', 'Announcements', 'ShopItems', 'PendingItems', 'Emotions', 'HallOfFame', 'Tasks', 'Jobs', 'PurchaseLogs', 'Records', 'RecordCategories', 'Letters'];
             const missingSheets = requiredSheets.filter(sheet => !data[sheet]);
             
             if (missingSheets.length > 0) {
@@ -167,7 +167,8 @@
               Jobs: Array.isArray(data.Jobs) ? data.Jobs : [],
               PurchaseLogs: Array.isArray(data.PurchaseLogs) ? data.PurchaseLogs : [],
               Records: Array.isArray(data.Records) ? data.Records : [],
-              RecordCategories: Array.isArray(data.RecordCategories) ? data.RecordCategories : []
+              RecordCategories: Array.isArray(data.RecordCategories) ? data.RecordCategories : [],
+              Letters: Array.isArray(data.Letters) ? data.Letters : []
             });
           } catch (error) {
             console.error("Data Fetch Error:", error);
@@ -505,6 +506,7 @@
             { id: 'students', label: '학급 관리', icon: '🌱' },
             { id: 'records', label: '기록 관리', icon: '📈' }, 
             { id: 'tasks', label: '할 일', icon: '📝' },
+            { id: 'letters', label: '우체국', icon: '📮' },
             { id: 'emotions', label: '마음 일기', icon: '🫧' },
             { id: 'announcements', label: '알림장', icon: '📢' },
             { id: 'halloffame', label: '명예의 전당', icon: '🏆' },
@@ -561,6 +563,7 @@
 
                 {activeTab === 'records' && <RecordManagerTeacher dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} students={students} />}
                 {activeTab === 'tasks' && <TaskManagerTeacher currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
+                {activeTab === 'letters' && <PostOfficeTeacher dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} students={students} />}
                 {activeTab === 'emotions' && <EmotionBoard currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} updateStudentData={updateStudentData} />}
                 {activeTab === 'announcements' && <AnnouncementManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
                 {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
@@ -1304,10 +1307,15 @@
           return !isSubmitted && !isApproved;
         }).length;
 
+        // 💡 새 편지 도착 뱃지
+        const letters = Array.isArray(dbData.Letters) ? dbData.Letters : [];
+        const unreadLettersCount = letters.filter(l => l.receiverId === currentUser.id && l.status === 'approved').length; 
+
         const navItems = [
           { id: 'profile', label: '내 정보', icon: '🐳' },
           { id: 'records', label: '나의 기록', icon: '📈' }, 
           { id: 'tasks', label: '할 일', icon: '📝', badge: unsubmittedTasksCount },
+          { id: 'letters', label: '편지함', icon: '📮', badge: unreadLettersCount },
           { id: 'emotions', label: '마음 일기', icon: '🫧' },
           { id: 'halloffame', label: '명예의 전당', icon: '🏆' },
           { id: 'announcements', label: '알림장', icon: '📢' },
@@ -1329,6 +1337,7 @@
             {activeTab === 'profile' && <StudentProfile currentUser={currentUser} shopItems={dbData.ShopItems} jobs={dbData.Jobs} updateStudentData={updateStudentData} showToast={showToast} onOpenPwdModal={onOpenPwdModal} />}
             {activeTab === 'records' && <StudentRecords currentUser={currentUser} dbData={dbData} />}
             {activeTab === 'tasks' && <TaskManagerStudent currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+            {activeTab === 'letters' && <PostOfficeStudent currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
             {activeTab === 'emotions' && <EmotionBoard currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} updateStudentData={updateStudentData} />}
             {activeTab === 'shop' && <Shop currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
             {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
@@ -1442,7 +1451,6 @@
               
               <div className="relative flex flex-col items-center">
                 <div className="relative w-40 h-40 bg-gradient-to-tr from-orange-50 to-sky-50 rounded-full flex items-center justify-center shadow-inner border-[6px] border-white shrink-0 overflow-hidden">
-                  {/* 장착한 아이템이 없을 때만 기본 아바타 표시 */}
                   {equippedIcons.length === 0 && (
                     <span className="text-[5rem] drop-shadow-md text-orange-400">
                       {currentUser.gender === 'M' ? '👦' : (currentUser.gender === 'F' ? '👧' : '👤')}
