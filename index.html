@@ -68,13 +68,7 @@
         const [syncing, setSyncing] = useState(false);
         
         // 💡 교사용 자동 접속 숏컷 제거, localStorage 확인만 수행
-        const [currentUser, setCurrentUser] = useState(() => {
-          const savedUser = localStorage.getItem('padoUser');
-          if (savedUser) {
-            try { return JSON.parse(savedUser); } catch(e) {}
-          }
-          return null;
-        });
+        const [currentUser, setCurrentUser] = useState(null);
         
         const [missingDbSheets, setMissingDbSheets] = useState([]);
         const [toastMsg, setToastMsg] = useState('');
@@ -2605,6 +2599,15 @@
           showToast('칭찬 글이 수정되었습니다.');
         };
 
+        const handleApprove = (id) => {
+          const letter = letters.find(l => l.id === id);
+          if (!letter) return;
+          const updatedLetter = { ...letter, status: 'approved' };
+          setDbData(prev => ({ ...prev, Letters: prev.Letters.map(l => l.id === id ? updatedLetter : l) }));
+          syncToServer('Letters', 'UPDATE', id, updatedLetter);
+          showToast('칭찬 글이 승인되어 게시판에 표시됩니다!');
+        };
+
         return (
           <div className="space-y-6">
             <div className="bg-gradient-to-r from-teal-100 to-cyan-100 p-8 rounded-[2.5rem] shadow-sm text-teal-900 relative overflow-hidden border border-teal-200">
@@ -2628,9 +2631,11 @@
                 ) : (
                   <div className="grid grid-cols-2 gap-4">
                     {activeTargets.map(t => {
-                      const count = complimentLetters.filter(l => l.receiverId === t.studentId).length;
+                      const count = complimentLetters.filter(l => l.receiverId === t.studentId && l.status === 'approved').length;
+                      const pendingCount = complimentLetters.filter(l => l.receiverId === t.studentId && l.status === 'pending').length;
                       return (
-                        <div key={t.id} onClick={() => setSelectedTarget({ id: t.studentId, name: t.studentName, isPast: false })} className="bg-teal-50 hover:bg-teal-100 border border-teal-200 p-4 rounded-2xl cursor-pointer transition text-center">
+                        <div key={t.id} onClick={() => setSelectedTarget({ id: t.studentId, name: t.studentName, isPast: false })} className="bg-teal-50 hover:bg-teal-100 border border-teal-200 p-4 rounded-2xl cursor-pointer transition text-center relative">
+                          {pendingCount > 0 && <div className="absolute top-2 right-2 bg-rose-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-sm">{pendingCount}건 대기</div>}
                           <div className="text-3xl mb-2">🚿</div>
                           <div className="font-black text-teal-900">{t.studentName}</div>
                           <div className="text-sm font-bold text-teal-600 mt-1">칭찬 {count}개</div>
@@ -2668,9 +2673,12 @@
                     <div className="text-center py-10 text-stone-400 font-bold bg-stone-50 rounded-3xl">아직 칭찬 글이 없습니다.</div>
                   ) : (
                     complimentLetters.filter(l => l.receiverId === selectedTarget.id).map(letter => (
-                      <div key={letter.id} className="bg-cyan-50/50 p-5 rounded-2xl border border-cyan-100 relative group">
+                      <div key={letter.id} className={`p-5 rounded-2xl border relative group ${letter.status === 'pending' ? 'bg-amber-50 border-amber-200' : 'bg-cyan-50/50 border-cyan-100'}`}>
                         <div className="flex justify-between items-start mb-2">
-                          <span className="font-bold text-cyan-800">From. {letter.senderName}</span>
+                          <span className="font-bold text-cyan-800 flex items-center gap-2">
+                            From. {letter.senderName}
+                            {letter.status === 'pending' && <span className="bg-amber-200 text-amber-700 px-2 py-0.5 rounded-lg text-xs font-bold">승인 대기중</span>}
+                          </span>
                           <span className="text-xs text-stone-400 font-bold">{letter.date}</span>
                         </div>
                         {editingLetterId === letter.id ? (
@@ -2686,8 +2694,9 @@
                         )}
                         {!editingLetterId && (
                           <div className="absolute top-4 right-4 flex gap-2">
-                            <button onClick={() => handleStartEdit(letter)} className="text-xs bg-cyan-100 text-cyan-600 px-2 py-1 rounded-md font-bold hover:bg-cyan-200">수정</button>
-                            <button onClick={() => handleDeleteLetter(letter.id)} className="text-xs bg-rose-100 text-rose-600 px-2 py-1 rounded-md font-bold hover:bg-rose-200">삭제</button>
+                            {letter.status === 'pending' && <button onClick={() => handleApprove(letter.id)} className="text-xs bg-emerald-100 text-emerald-600 px-2 py-1 rounded-md font-bold hover:bg-emerald-200 shadow-sm border border-emerald-200">승인</button>}
+                            <button onClick={() => handleStartEdit(letter)} className="text-xs bg-cyan-100 text-cyan-600 px-2 py-1 rounded-md font-bold hover:bg-cyan-200 shadow-sm border border-cyan-200">수정</button>
+                            <button onClick={() => handleDeleteLetter(letter.id)} className="text-xs bg-rose-100 text-rose-600 px-2 py-1 rounded-md font-bold hover:bg-rose-200 shadow-sm border border-rose-200">삭제</button>
                           </div>
                         )}
                       </div>
@@ -2740,7 +2749,7 @@
         }, []); // 중복 제거
 
         const letters = Array.isArray(dbData.Letters) ? dbData.Letters : [];
-        const complimentLetters = letters.filter(l => l.tag === '칭찬샤워');
+        const complimentLetters = letters.filter(l => l.tag === '칭찬샤워' && l.status === 'approved');
 
         const handleSend = (e) => {
           e.preventDefault();
@@ -2754,14 +2763,14 @@
             receiverName: selectedTarget.name,
             tag: '칭찬샤워',
             content: content,
-            status: 'approved',
+            status: 'pending', // 교사 승인 후 approved로 변경
             date: new Date().toISOString().split('T')[0]
           };
 
           setDbData(prev => ({ ...prev, Letters: [...prev.Letters, newLetter] }));
           syncToServer('Letters', 'INSERT', null, newLetter);
           setContent('');
-          showToast('칭찬 글이 성공적으로 남겨졌습니다! 🚿✨');
+          showToast('칭찬 글이 전송되었습니다! 선생님의 승인 후 게시판에 표시됩니다. 🚿✨');
         };
 
         return (
@@ -2854,7 +2863,7 @@
         );
       }
 
-      const root = ReactDOM.createRoot(document.getElementById('root'));
+            const root = ReactDOM.createRoot(document.getElementById('root'));
       root.render(<App />);
     </script>
   </body>
