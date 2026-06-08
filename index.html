@@ -2736,6 +2736,18 @@
         );
       }
 
+      function generateAnonymousName(id) {
+        const adjectives = ['행복한', '기쁜', '즐거운', '신나는', '따뜻한', '포근한', '상쾌한', '짜릿한', '든든한', '흐뭇한', '자랑스러운', '평온한', '활기찬', '다정한', '친절한', '용감한', '씩씩한', '지혜로운', '똑똑한', '귀여운', '멋진', '아름다운', '반짝이는', '사랑스러운', '다부진', '상냥한', '유쾌한', '느긋한', '감동적인', '희망찬'];
+        const animals = ['강아지', '고양이', '토끼', '다람쥐', '햄스터', '쿼카', '알파카', '사슴', '판다', '코알라', '병아리', '오리', '펭귄', '돌고래', '수달', '해달', '물개', '거북이', '고슴도치', '기린', '코끼리', '호랑이', '사자', '곰', '여우', '늑대', '독수리', '부엉이', '참새', '제비'];
+        let hash = 0;
+        for (let i = 0; i < id.length; i++) {
+          hash = id.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const adjIndex = Math.abs(hash) % adjectives.length;
+        const animalIndex = Math.abs(hash >> 5) % animals.length;
+        return adjectives[adjIndex] + ' ' + animals[animalIndex];
+      }
+
       // 칭찬 샤워 학생용 컴포넌트
       function ComplimentShowerStudent({ currentUser, dbData, setDbData, syncToServer, showToast }) {
         const [selectedTarget, setSelectedTarget] = useState(null); // { id, name, isPast }
@@ -2817,7 +2829,7 @@
                     complimentLetters.filter(l => l.receiverId === selectedTarget.id).map(letter => (
                       <div key={letter.id} className="bg-gradient-to-r from-sky-50 to-cyan-50 p-5 rounded-2xl border border-cyan-100 relative">
                         <div className="flex justify-between items-start mb-2">
-                          <span className="font-black text-cyan-700">From. {letter.senderName}</span>
+                          <span className="font-black text-cyan-700">From. {generateAnonymousName(letter.id)} 🤫</span>
                           <span className="text-xs text-stone-400 font-bold">{letter.date}</span>
                         </div>
                         <div className="font-bold text-stone-800 whitespace-pre-wrap leading-relaxed">{letter.content}</div>
