@@ -155,7 +155,7 @@
               PurchaseLogs: Array.isArray(data.PurchaseLogs) ? data.PurchaseLogs : [],
               Records: Array.isArray(data.Records) ? data.Records : [],
               RecordCategories: Array.isArray(data.RecordCategories) ? data.RecordCategories : [],
-              Letters: Array.isArray(data.Letters) ? data.Letters : [],
+              Letters: Array.isArray(data.Letters) ? data.Letters.map(l => ({ ...l, likes: safeParseArray(l.likes) })) : [],
               ComplimentTargets: Array.isArray(data.ComplimentTargets) ? data.ComplimentTargets : []
             });
           } catch (error) {
@@ -2878,13 +2878,32 @@
             tag: '칭찬샤워',
             content: content,
             status: 'pending', // 교사 승인 후 approved로 변경
-            date: new Date().toISOString().split('T')[0]
+            date: new Date().toISOString().split('T')[0],
+            likes: []
           };
 
           setDbData(prev => ({ ...prev, Letters: [...prev.Letters, newLetter] }));
           syncToServer('Letters', 'INSERT', null, newLetter);
           setContent('');
           showToast('칭찬 글이 전송되었습니다! 선생님의 승인 후 게시판에 표시됩니다. 🚿✨');
+        };
+
+        const handleLike = (letterId) => {
+          const letter = letters.find(l => l.id === letterId);
+          if (!letter) return;
+          const postLikes = Array.isArray(letter.likes) ? letter.likes : [];
+          let newLikes;
+          if (postLikes.includes(currentUser.id)) {
+            newLikes = postLikes.filter(id => id !== currentUser.id);
+          } else {
+            newLikes = [...postLikes, currentUser.id];
+          }
+          const updatedLetter = { ...letter, likes: newLikes };
+          setDbData(prev => ({
+            ...prev,
+            Letters: prev.Letters.map(l => l.id === letterId ? updatedLetter : l)
+          }));
+          syncToServer('Letters', 'UPDATE', letterId, { likes: newLikes });
         };
 
         return (
@@ -2945,15 +2964,23 @@
                   {complimentLetters.filter(l => l.receiverId === selectedTarget.id).length === 0 ? (
                     <div className="text-center py-10 text-stone-400 font-bold bg-stone-50 rounded-3xl">아직 칭찬 글이 없습니다. 첫 칭찬을 남겨보세요!</div>
                   ) : (
-                    complimentLetters.filter(l => l.receiverId === selectedTarget.id).map(letter => (
+                    complimentLetters.filter(l => l.receiverId === selectedTarget.id).map(letter => {
+                      const postLikes = Array.isArray(letter.likes) ? letter.likes : [];
+                      const isLiked = postLikes.includes(currentUser.id);
+                      return (
                       <div key={letter.id} className="bg-gradient-to-r from-sky-50 to-cyan-50 p-5 rounded-2xl border border-cyan-100 relative">
                         <div className="flex justify-between items-start mb-2">
                           <span className="font-black text-cyan-700">From. {generateAnonymousName(letter.id)} 🤫</span>
                           <span className="text-xs text-stone-400 font-bold">{letter.date}</span>
                         </div>
-                        <div className="font-bold text-stone-800 whitespace-pre-wrap leading-relaxed">{letter.content}</div>
+                        <div className="font-bold text-stone-800 whitespace-pre-wrap leading-relaxed mb-3">{letter.content}</div>
+                        <div className="flex justify-end">
+                          <button onClick={() => handleLike(letter.id)} className={`flex items-center gap-1 text-sm font-bold px-3 py-1.5 rounded-full transition shadow-sm border ${isLiked ? 'bg-rose-50 text-rose-500 border-rose-100' : 'bg-white text-stone-400 border-stone-100 hover:bg-stone-50'}`}>
+                            {isLiked ? '❤️' : '🤍'} {postLikes.length > 0 && postLikes.length}
+                          </button>
+                        </div>
                       </div>
-                    ))
+                    )})
                   )}
                 </div>
 
