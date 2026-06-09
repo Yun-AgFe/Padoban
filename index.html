@@ -211,9 +211,7 @@
 
             const pwdStr = String(user.pwd).trim();
             if (user.role === 'student') {
-              if (!/^\d{4}$/.test(pwdStr) || ['1234', '1111', '0000'].includes(pwdStr)) {
-                setShowPwdModal(true);
-              }
+              // 학생 스스로 비밀번호를 변경하지 못하도록 변경 창 띄우지 않음
             }
           } else {
             setLoginError('이름이나 비밀번호가 틀렸습니다.');
@@ -1942,9 +1940,6 @@
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <div className="flex items-center gap-1 text-amber-800 bg-amber-100 px-5 py-2.5 rounded-2xl font-black shadow-sm text-lg">🪙 {currentUser.money} 결</div>
-                    <button onClick={onOpenPwdModal} className="text-[10px] bg-white border border-stone-200 text-stone-600 px-3 py-1.5 rounded-full font-bold shadow-sm hover:bg-stone-50 flex items-center gap-1">
-                      🔑 비밀번호 변경
-                    </button>
                   </div>
                 </div>
 
