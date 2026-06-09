@@ -193,6 +193,14 @@
 
         const handleLogin = (e) => {
           e.preventDefault();
+          if (String(loginName).trim() === '학부모' && String(loginPwd).trim() === '1234') {
+            const parentUser = { id: 'parent', name: '학부모', role: 'parent', money: 0, exp: 0, level: 1 };
+            setCurrentUser(parentUser);
+            localStorage.setItem('padoUser', JSON.stringify(parentUser));
+            setLoginError('');
+            showToast('학부모님 환영합니다! 🌊');
+            return;
+          }
           const user = dbData.Users.find(u => String(u.name).trim() === String(loginName).trim() && String(u.pwd).trim() === String(loginPwd).trim());
           
           if (user) {
@@ -697,7 +705,9 @@
             <div className="flex bg-white/80 p-2 rounded-2xl shadow-sm gap-2 border border-pink-100">
               <button onClick={() => setActiveTab('received')} className={`flex-1 py-3 rounded-xl font-bold transition ${activeTab === 'received' ? 'bg-pink-400 text-white shadow-md' : 'text-stone-500 hover:bg-pink-50'}`}>받은 편지 ({receivedLetters.length})</button>
               <button onClick={() => setActiveTab('sent')} className={`flex-1 py-3 rounded-xl font-bold transition ${activeTab === 'sent' ? 'bg-pink-400 text-white shadow-md' : 'text-stone-500 hover:bg-pink-50'}`}>보낸 편지</button>
-              <button onClick={() => setActiveTab('write')} className={`flex-1 py-3 rounded-xl font-bold transition ${activeTab === 'write' ? 'bg-pink-400 text-white shadow-md' : 'text-stone-500 hover:bg-pink-50'}`}>편지 쓰기 ✍️</button>
+              {currentUser.role !== 'parent' && (
+                <button onClick={() => setActiveTab('write')} className={`flex-1 py-3 rounded-xl font-bold transition ${activeTab === 'write' ? 'bg-pink-400 text-white shadow-md' : 'text-stone-500 hover:bg-pink-50'}`}>편지 쓰기 ✍️</button>
+              )}
             </div>
 
             {activeTab === 'write' && (
@@ -1138,7 +1148,7 @@
                             <span className="text-sm font-bold text-stone-500">을(를) 구매했습니다.</span>
                           </div>
                           <div className="font-black text-amber-600 whitespace-nowrap sm:text-right">
-                            - 🪙 {log.price}원
+                            - 🪙 {log.price} 결
                           </div>
                         </div>
                       ))}
@@ -1219,33 +1229,35 @@
                       {isImageUrl(item.icon) ? <img src={item.icon} alt={item.name} className="w-full h-full object-contain p-2" /> : <span className="text-5xl drop-shadow-md">{safeText(item.icon)}</span>}
                     </div>
                     <div className="font-black text-slate-800 mb-1">{safeText(item.name)}</div>
-                    <div className="text-sky-700 font-black mb-2">{item.price} 파도</div>
+                    <div className="text-sky-700 font-black mb-2">{item.price} 결</div>
                     <div className="text-xs font-bold text-stone-500 mb-4 bg-stone-100 rounded-lg px-2 py-1">
                       {item.maxQuantity ? `남은 수량: ${remaining}개` : '수량: 무제한'}
                     </div>
                     <div className="mt-auto">
-                      <button onClick={() => handleBuy(item)} disabled={isOwned || isSoldOut} className={`w-full py-3 rounded-xl text-sm font-black transition-all ${isOwned ? 'bg-slate-100 text-slate-400 border border-slate-200' : isSoldOut ? 'bg-rose-100 text-rose-500 border border-rose-200 cursor-not-allowed' : 'bg-sky-400 text-white border border-sky-500 shadow-md hover:bg-sky-500 hover:-translate-y-1'}`}>
-                        {isOwned ? '보유중' : isSoldOut ? '품절' : '구매하기'}
+                      <button onClick={() => handleBuy(item)} disabled={isOwned || isSoldOut || currentUser.role === 'parent'} className={`w-full py-3 rounded-xl text-sm font-black transition-all ${isOwned ? 'bg-slate-100 text-slate-400 border border-slate-200' : isSoldOut ? 'bg-rose-100 text-rose-500 border border-rose-200 cursor-not-allowed' : currentUser.role === 'parent' ? 'bg-stone-100 text-stone-400 border border-stone-200 cursor-not-allowed' : 'bg-sky-400 text-white border border-sky-500 shadow-md hover:bg-sky-500 hover:-translate-y-1'}`}>
+                        {isOwned ? '보유중' : isSoldOut ? '품절' : currentUser.role === 'parent' ? '보기 전용' : '구매하기'}
                       </button>
                     </div>
                   </div>
                 )
               })}
             </div>
-            <div className="mt-8">
-              <button onClick={() => setShowUpload(!showUpload)} className="w-full bg-white/80 text-sky-700 font-black py-5 rounded-[2rem] shadow-sm border border-sky-200 hover:bg-sky-50 transition">
-                📤 아이템 제안하기
-              </button>
-              {showUpload && (
-                <form onSubmit={handleUploadSubmit} className="mt-4 bg-white/95 p-6 rounded-[2rem] shadow-sm border border-sky-200 space-y-4">
-                  <div className="flex gap-4">
-                    <input type="text" value={newItemIcon} onChange={e=>setNewItemIcon(e.target.value)} className="w-1/4 text-center text-2xl p-3 bg-white border border-sky-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sky-400 font-bold" placeholder="이모지/URL" required />
-                    <input type="text" value={newItemName} onChange={e=>setNewItemName(e.target.value)} className="w-3/4 p-3 bg-white border border-sky-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sky-400 font-bold text-stone-800" placeholder="아이템 이름" required />
-                  </div>
-                  <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 border border-sky-700 text-white font-black py-4 rounded-xl shadow-md transition">선생님께 보내기</button>
-                </form>
-              )}
-            </div>
+            {currentUser.role !== 'parent' && (
+              <div className="mt-8">
+                <button onClick={() => setShowUpload(!showUpload)} className="w-full bg-white/80 text-sky-700 font-black py-5 rounded-[2rem] shadow-sm border border-sky-200 hover:bg-sky-50 transition">
+                  📤 아이템 제안하기
+                </button>
+                {showUpload && (
+                  <form onSubmit={handleUploadSubmit} className="mt-4 bg-white/95 p-6 rounded-[2rem] shadow-sm border border-sky-200 space-y-4">
+                    <div className="flex gap-4">
+                      <input type="text" value={newItemIcon} onChange={e=>setNewItemIcon(e.target.value)} className="w-1/4 text-center text-2xl p-3 bg-white border border-sky-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sky-400 font-bold" placeholder="이모지/URL" required />
+                      <input type="text" value={newItemName} onChange={e=>setNewItemName(e.target.value)} className="w-3/4 p-3 bg-white border border-sky-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-sky-400 font-bold text-stone-800" placeholder="아이템 이름" required />
+                    </div>
+                    <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 border border-sky-700 text-white font-black py-4 rounded-xl shadow-md transition">선생님께 보내기</button>
+                  </form>
+                )}
+              </div>
+            )}
           </div>
         );
       }
@@ -1389,7 +1401,7 @@
                       {isImageUrl(item.icon) ? <img src={item.icon} alt={item.name} className="w-full h-full object-contain p-2" /> : <span className="text-4xl">{safeText(item.icon)}</span>}
                     </div>
                     <div className="font-black text-stone-800 mb-1">{safeText(item.name)}</div>
-                    <div className="text-sky-600 font-black mb-2">{item.price} 파도</div>
+                    <div className="text-sky-600 font-black mb-2">{item.price} 결</div>
                     <div className="text-xs font-bold px-2 py-1 bg-stone-100 rounded-lg text-stone-500">
                       {item.maxQuantity ? `${soldCount} / ${item.maxQuantity}개 판매됨` : `${soldCount}개 판매됨 (무제한)`}
                     </div>
@@ -1787,15 +1799,17 @@
                     )}
                     <p className="text-stone-600 font-medium text-sm whitespace-pre-wrap bg-stone-50 p-4 rounded-2xl mb-4">{safeText(task.description)}</p>
 
-                    <div className="flex justify-end mt-4">
-                      {isApproved ? (
-                        <div className="bg-emerald-100 text-emerald-700 font-black px-4 py-2 rounded-xl border border-emerald-200 shadow-sm">선생님 확인 완료! 🎉</div>
-                      ) : isSubmitted ? (
-                        <button onClick={() => requestCancelSubmit(task.id)} className="bg-stone-200 hover:bg-stone-300 text-stone-700 font-black px-5 py-3 rounded-xl transition shadow-sm">제출 취소</button>
-                      ) : (
-                        <button onClick={() => requestSubmit(task.id)} className="bg-indigo-500 hover:bg-indigo-600 text-white font-black px-5 py-3 rounded-xl transition shadow-md">다 했어요 ✋</button>
-                      )}
-                    </div>
+                    {currentUser.role !== 'parent' && (
+                      <div className="flex justify-end mt-4">
+                        {isApproved ? (
+                          <div className="bg-emerald-100 text-emerald-700 font-black px-4 py-2 rounded-xl border border-emerald-200 shadow-sm">선생님 확인 완료! 🎉</div>
+                        ) : isSubmitted ? (
+                          <button onClick={() => requestCancelSubmit(task.id)} className="bg-stone-200 hover:bg-stone-300 text-stone-700 font-black px-5 py-3 rounded-xl transition shadow-sm">제출 취소</button>
+                        ) : (
+                          <button onClick={() => requestSubmit(task.id)} className="bg-indigo-500 hover:bg-indigo-600 text-white font-black px-5 py-3 rounded-xl transition shadow-md">다 했어요 ✋</button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })
@@ -1882,12 +1896,12 @@
                   <div>
                     <div className="flex gap-2 mb-2 flex-wrap">
                       {currentUser.title && <span className="bg-orange-100 text-orange-900 text-sm font-black px-4 py-1.5 rounded-full inline-block shadow-sm border border-orange-200">✨ {safeText(currentUser.title)}</span>}
-                      {currentJob && <span className="bg-indigo-100 text-indigo-900 text-sm font-black px-4 py-1.5 rounded-full inline-block shadow-sm border border-indigo-200">💼 {safeText(currentJob.name)} (월 {currentJob.salary}원)</span>}
+                      {currentJob && <span className="bg-indigo-100 text-indigo-900 text-sm font-black px-4 py-1.5 rounded-full inline-block shadow-sm border border-indigo-200">💼 {safeText(currentJob.name)} (월 {currentJob.salary}결)</span>}
                     </div>
                     <h2 className="text-3xl font-black text-stone-800 mt-1">{safeText(currentUser.name)}</h2>
                   </div>
                   <div className="flex flex-col items-end gap-2">
-                    <div className="flex items-center gap-1 text-amber-800 bg-amber-100 px-5 py-2.5 rounded-2xl font-black shadow-sm text-lg">🪙 {currentUser.money}원</div>
+                    <div className="flex items-center gap-1 text-amber-800 bg-amber-100 px-5 py-2.5 rounded-2xl font-black shadow-sm text-lg">🪙 {currentUser.money} 결</div>
                     <button onClick={onOpenPwdModal} className="text-[10px] bg-white border border-stone-200 text-stone-600 px-3 py-1.5 rounded-full font-bold shadow-sm hover:bg-stone-50 flex items-center gap-1">
                       🔑 비밀번호 변경
                     </button>
@@ -2102,48 +2116,50 @@
               </div>
             )}
 
-            {!hasPostedToday ? (
-              <form onSubmit={handlePost} className="bg-white/90 backdrop-blur-md p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-sky-100 space-y-6">
-                <h3 className="font-black text-2xl text-sky-900 flex items-center gap-2 mb-4">🫧 지금 내 마음은?</h3>
-                
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {Object.values(moodZones).map(zone => (
-                    <button key={zone.id} type="button" onClick={() => {setSelectedZone(zone.id); setSelectedEmotion(zone.emotions[0].emoji);}} className={`p-4 rounded-3xl font-black flex flex-col items-center justify-center transition-all ${selectedZone === zone.id ? zone.btnColor + ' transform -translate-y-1 scale-105 border-2 border-white' : 'bg-stone-50 text-stone-500 hover:bg-stone-100 border border-stone-200'}`}>
-                      <span className="text-xl">{zone.name}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className={`p-6 rounded-[2.5rem] border-[3px] bg-white ${currentZoneData.itemColor.split(' ')[2]}`}>
-                  <div className="grid grid-cols-3 gap-3">
-                    {currentZoneData.emotions.map(emo => (
-                      <button key={emo.label} type="button" onClick={() => setSelectedEmotion(emo.emoji)} className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${selectedEmotion === emo.emoji ? currentZoneData.itemColor + ' shadow-md scale-105' : 'bg-stone-50 border-stone-100 text-stone-400 grayscale hover:grayscale-0 hover:bg-white'}`}>
-                        <span className="text-4xl mb-2 drop-shadow-sm">{emo.emoji}</span>
-                        <span className="text-sm font-black">{emo.label}</span>
+            {currentUser.role !== 'parent' && (
+              !hasPostedToday ? (
+                <form onSubmit={handlePost} className="bg-white/90 backdrop-blur-md p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-sky-100 space-y-6">
+                  <h3 className="font-black text-2xl text-sky-900 flex items-center gap-2 mb-4">🫧 지금 내 마음은?</h3>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {Object.values(moodZones).map(zone => (
+                      <button key={zone.id} type="button" onClick={() => {setSelectedZone(zone.id); setSelectedEmotion(zone.emotions[0].emoji);}} className={`p-4 rounded-3xl font-black flex flex-col items-center justify-center transition-all ${selectedZone === zone.id ? zone.btnColor + ' transform -translate-y-1 scale-105 border-2 border-white' : 'bg-stone-50 text-stone-500 hover:bg-stone-100 border border-stone-200'}`}>
+                        <span className="text-xl">{zone.name}</span>
                       </button>
                     ))}
                   </div>
-                  
-                  <div className="mt-6 pt-6 border-t border-stone-100">
-                    <div className="relative">
-                      <textarea placeholder="무슨 일이 있었는지, 왜 그런 기분이 들었는지 편하게 이야기해주세요." value={content} onChange={e=>setContent(e.target.value)} rows="4" className="w-full bg-stone-50 border-2 border-stone-100 rounded-3xl px-6 py-5 focus:outline-none focus:ring-4 focus:ring-sky-100 focus:border-sky-300 font-bold text-stone-800 resize-none" required />
-                      <div className="absolute bottom-4 right-4 flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-sm border border-stone-200">
-                        <span className="text-xs font-black text-stone-600">🔒 비밀글</span>
-                        <button type="button" onClick={() => setIsSecret(!isSecret)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isSecret ? 'bg-sky-500' : 'bg-stone-300'}`}>
-                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isSecret ? 'translate-x-6' : 'translate-x-1'}`} />
+
+                  <div className={`p-6 rounded-[2.5rem] border-[3px] bg-white ${currentZoneData.itemColor.split(' ')[2]}`}>
+                    <div className="grid grid-cols-3 gap-3">
+                      {currentZoneData.emotions.map(emo => (
+                        <button key={emo.label} type="button" onClick={() => setSelectedEmotion(emo.emoji)} className={`flex flex-col items-center justify-center p-3 rounded-2xl border-2 transition-all ${selectedEmotion === emo.emoji ? currentZoneData.itemColor + ' shadow-md scale-105' : 'bg-stone-50 border-stone-100 text-stone-400 grayscale hover:grayscale-0 hover:bg-white'}`}>
+                          <span className="text-4xl mb-2 drop-shadow-sm">{emo.emoji}</span>
+                          <span className="text-sm font-black">{emo.label}</span>
                         </button>
+                      ))}
+                    </div>
+                    
+                    <div className="mt-6 pt-6 border-t border-stone-100">
+                      <div className="relative">
+                        <textarea placeholder="무슨 일이 있었는지, 왜 그런 기분이 들었는지 편하게 이야기해주세요." value={content} onChange={e=>setContent(e.target.value)} rows="4" className="w-full bg-stone-50 border-2 border-stone-100 rounded-3xl px-6 py-5 focus:outline-none focus:ring-4 focus:ring-sky-100 focus:border-sky-300 font-bold text-stone-800 resize-none" required />
+                        <div className="absolute bottom-4 right-4 flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-sm border border-stone-200">
+                          <span className="text-xs font-black text-stone-600">🔒 비밀글</span>
+                          <button type="button" onClick={() => setIsSecret(!isSecret)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isSecret ? 'bg-sky-500' : 'bg-stone-300'}`}>
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isSecret ? 'translate-x-6' : 'translate-x-1'}`} />
+                          </button>
+                        </div>
                       </div>
                     </div>
+                    <button type="submit" className="w-full bg-sky-500 hover:bg-sky-600 text-white font-black py-5 rounded-2xl shadow-md transition-transform hover:-translate-y-1 text-xl mt-4 border border-sky-600">일기장에 기록하기</button>
                   </div>
-                  <button type="submit" className="w-full bg-sky-500 hover:bg-sky-600 text-white font-black py-5 rounded-2xl shadow-md transition-transform hover:-translate-y-1 text-xl mt-4 border border-sky-600">일기장에 기록하기</button>
+                </form>
+              ) : (
+                <div className="bg-sky-400 border-4 border-sky-200 text-white p-8 rounded-[2.5rem] shadow-sm flex flex-col items-center justify-center text-center gap-4 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 text-[10rem] opacity-20 transform translate-x-10 -translate-y-10">🫧</div>
+                  <h3 className="font-black text-3xl z-10">기록 완료!</h3>
+                  <p className="font-bold z-10 text-sky-50">오늘의 소중한 마음을 남겨주어 고마워요.</p>
                 </div>
-              </form>
-            ) : (
-              <div className="bg-sky-400 border-4 border-sky-200 text-white p-8 rounded-[2.5rem] shadow-sm flex flex-col items-center justify-center text-center gap-4 relative overflow-hidden">
-                <div className="absolute top-0 right-0 text-[10rem] opacity-20 transform translate-x-10 -translate-y-10">🫧</div>
-                <h3 className="font-black text-3xl z-10">기록 완료!</h3>
-                <p className="font-bold z-10 text-sky-50">오늘의 소중한 마음을 남겨주어 고마워요.</p>
-              </div>
+              )
             )}
 
             {dateKeys.length > 0 && (
@@ -2205,7 +2221,7 @@
                           </div>
                         )}
 
-                        {(!postIsSecret || canViewContent) && (
+                        {(!postIsSecret || canViewContent) && currentUser.role !== 'parent' && (
                           <div className="mt-3 flex justify-end">
                             <button onClick={() => handleLike(post.id)} className={`flex items-center gap-1 text-sm font-bold px-3 py-1.5 rounded-full transition shadow-sm border ${isLiked ? 'bg-rose-50 text-rose-500 border-rose-100' : 'bg-white text-stone-400 border-stone-100 hover:bg-stone-50'}`}>
                               {isLiked ? '❤️' : '🤍'} {postLikes.length > 0 && postLikes.length}
@@ -2289,7 +2305,7 @@
               <div className="space-y-3 bg-stone-50 p-5 rounded-3xl border border-stone-100">
                 <div className="flex justify-between items-center bg-white p-3 rounded-2xl shadow-sm border border-stone-50">
                   <span className="text-sm font-black text-stone-500">가진 돈</span>
-                  <span className="font-black text-amber-600 text-lg">🪙 {student.money}원</span>
+                  <span className="font-black text-amber-600 text-lg">🪙 {student.money} 결</span>
                 </div>
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-stone-50">
                   <div className="flex justify-between font-black mb-2"><span className="text-sky-600 text-sm">Level {student.level}</span> <span className="text-sky-400 text-xs">{currentExp} / {EXP_PER_LEVEL}</span></div>
@@ -2553,7 +2569,7 @@
                     </div>
                     <div className="mt-4 pt-3 border-t border-stone-50">
                       <span className="text-sm font-bold text-stone-500">월급:</span>
-                      <span className="font-black text-amber-600 ml-2">🪙 {job.salary}원</span>
+                      <span className="font-black text-amber-600 ml-2">🪙 {job.salary} 결</span>
                     </div>
                   </div>
                 ))
@@ -2664,7 +2680,7 @@
           const expInput = window.prompt('작성자(' + letter.senderName + ')에게 지급할 경험치(EXP)를 입력하세요. (지급 안함: 0 또는 빈칸)');
           if (expInput !== null && expInput.trim() !== '' && !isNaN(parseInt(expInput))) expReward = parseInt(expInput);
           
-          const moneyInput = window.prompt('작성자(' + letter.senderName + ')에게 지급할 파도(돈)를 입력하세요. (지급 안함: 0 또는 빈칸)');
+          const moneyInput = window.prompt('작성자(' + letter.senderName + ')에게 지급할 결(돈)를 입력하세요. (지급 안함: 0 또는 빈칸)');
           if (moneyInput !== null && moneyInput.trim() !== '' && !isNaN(parseInt(moneyInput))) moneyReward = parseInt(moneyInput);
 
           const updatedLetter = { ...letter, status: 'approved' };
@@ -2681,7 +2697,7 @@
             }
           }
           
-          showToast('승인 완료! (지급된 보상: EXP ' + expReward + ', 파도 ' + moneyReward + ')');
+          showToast('승인 완료! (지급된 보상: EXP ' + expReward + ', 결 ' + moneyReward + ')');
         };
 
         return (
@@ -2974,17 +2990,19 @@
                           <span className="text-xs text-stone-400 font-bold">{letter.date}</span>
                         </div>
                         <div className="font-bold text-stone-800 whitespace-pre-wrap leading-relaxed mb-3">{letter.content}</div>
-                        <div className="flex justify-end">
-                          <button onClick={() => handleLike(letter.id)} className={`flex items-center gap-1 text-sm font-bold px-3 py-1.5 rounded-full transition shadow-sm border ${isLiked ? 'bg-rose-50 text-rose-500 border-rose-100' : 'bg-white text-stone-400 border-stone-100 hover:bg-stone-50'}`}>
-                            {isLiked ? '❤️' : '🤍'} {postLikes.length > 0 && postLikes.length}
-                          </button>
-                        </div>
+                        {currentUser.role !== 'parent' && (
+                          <div className="flex justify-end">
+                            <button onClick={() => handleLike(letter.id)} className={`flex items-center gap-1 text-sm font-bold px-3 py-1.5 rounded-full transition shadow-sm border ${isLiked ? 'bg-rose-50 text-rose-500 border-rose-100' : 'bg-white text-stone-400 border-stone-100 hover:bg-stone-50'}`}>
+                              {isLiked ? '❤️' : '🤍'} {postLikes.length > 0 && postLikes.length}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )})
                   )}
                 </div>
 
-                {!selectedTarget.isPast && currentUser.id !== selectedTarget.id && (
+                {!selectedTarget.isPast && currentUser.id !== selectedTarget.id && currentUser.role !== 'parent' && (
                   <form onSubmit={handleSend} className="bg-cyan-50/50 p-4 rounded-3xl border border-cyan-100 mt-4">
                     <textarea 
                       placeholder={`${selectedTarget.name} 친구를 칭찬하는 따뜻한 글을 남겨주세요!`}
