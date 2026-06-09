@@ -2605,10 +2605,10 @@
           
           let expReward = 0;
           let moneyReward = 0;
-          const expInput = window.prompt(작성자( + letter.senderName + )에게 지급할 경험치(EXP)를 입력하세요. (지급 안함: 0 또는 빈칸));
+          const expInput = window.prompt('작성자(' + letter.senderName + ')에게 지급할 경험치(EXP)를 입력하세요. (지급 안함: 0 또는 빈칸)');
           if (expInput !== null && expInput.trim() !== '' && !isNaN(parseInt(expInput))) expReward = parseInt(expInput);
           
-          const moneyInput = window.prompt(작성자( + letter.senderName + )에게 지급할 파도(돈)를 입력하세요. (지급 안함: 0 또는 빈칸));
+          const moneyInput = window.prompt('작성자(' + letter.senderName + ')에게 지급할 파도(돈)를 입력하세요. (지급 안함: 0 또는 빈칸)');
           if (moneyInput !== null && moneyInput.trim() !== '' && !isNaN(parseInt(moneyInput))) moneyReward = parseInt(moneyInput);
 
           const updatedLetter = { ...letter, status: 'approved' };
@@ -2625,7 +2625,7 @@
             }
           }
           
-          showToast(승인 완료! (지급된 보상: EXP  + expReward + , 파도  + moneyReward + ));
+          showToast('승인 완료! (지급된 보상: EXP ' + expReward + ', 파도 ' + moneyReward + ')');
         };
 
         return (
