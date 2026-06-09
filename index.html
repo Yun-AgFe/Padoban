@@ -578,7 +578,7 @@
         }).length;
 
         const letters = Array.isArray(dbData.Letters) ? dbData.Letters : [];
-        const unreadLettersCount = letters.filter(l => l.receiverId === currentUser.id && l.status === 'approved').length; 
+        const unreadLettersCount = letters.filter(l => l.receiverId === currentUser.id && l.status === 'approved' && l.tag !== '칭찬샤워').length; 
 
         const navItems = [
           { id: 'profile', label: '내 정보', icon: '🐳' },
@@ -647,8 +647,8 @@
 
         const tags = ['칭찬해 👏', '고마워 💖', '미안해 💧', '응원해 💪', '축하해 🎉', '친해지자 🤝'];
 
-        const receivedLetters = letters.filter(l => l.receiverId === currentUser.id && l.status === 'approved').sort((a,b) => b.id - a.id);
-        const sentLetters = letters.filter(l => l.senderId === currentUser.id).sort((a,b) => b.id - a.id);
+        const receivedLetters = letters.filter(l => l.receiverId === currentUser.id && l.status === 'approved' && l.tag !== '칭찬샤워').sort((a,b) => b.id - a.id);
+        const sentLetters = letters.filter(l => l.senderId === currentUser.id && l.tag !== '칭찬샤워').sort((a,b) => b.id - a.id);
 
         const handleSend = (e) => {
           e.preventDefault();
@@ -772,8 +772,8 @@
         const [activeTab, setActiveTab] = useState('pending'); // pending, all, stats
 
         const letters = Array.isArray(dbData.Letters) ? dbData.Letters : [];
-        const pendingLetters = letters.filter(l => l.status === 'pending').sort((a,b) => b.id - a.id);
-        const approvedLetters = letters.filter(l => l.status === 'approved').sort((a,b) => b.id - a.id);
+        const pendingLetters = letters.filter(l => l.status === 'pending' && l.tag !== '칭찬샤워').sort((a,b) => b.id - a.id);
+        const approvedLetters = letters.filter(l => l.status === 'approved' && l.tag !== '칭찬샤워').sort((a,b) => b.id - a.id);
 
         const handleApprove = (id) => {
           setDbData(prev => ({
