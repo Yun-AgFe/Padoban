@@ -603,7 +603,7 @@
         ];
 
         const navItems = currentUser.role === 'parent' 
-          ? allNavItems.filter(item => item.id !== 'records' && item.id !== 'letters')
+          ? allNavItems.filter(item => item.id !== 'letters')
           : allNavItems;
 
         return (
@@ -1064,15 +1064,58 @@
       }
 
       function StudentRecords({ currentUser, dbData }) {
+        const [authStudentId, setAuthStudentId] = useState(null);
+        const [inputName, setInputName] = useState('');
+        const [inputPwd, setInputPwd] = useState('');
+        const [errorMsg, setErrorMsg] = useState('');
+
+        if (currentUser.role === 'parent' && !authStudentId) {
+          const handleAuth = (e) => {
+            e.preventDefault();
+            const student = dbData.Users.find(u => u.role === 'student' && String(u.name).trim() === String(inputName).trim() && String(u.pwd).trim() === String(inputPwd).trim());
+            if (student) {
+              setAuthStudentId(student.id);
+              setErrorMsg('');
+            } else {
+              setErrorMsg('이름이나 비밀번호가 일치하지 않습니다.');
+            }
+          };
+
+          return (
+            <div className="space-y-6">
+              <div className="bg-gradient-to-r from-blue-100 to-indigo-100 p-8 rounded-[2.5rem] shadow-sm text-blue-900 relative overflow-hidden">
+                <div className="absolute -right-4 -bottom-4 text-[8rem] opacity-30">📈</div>
+                <h2 className="text-3xl font-black mb-2 relative z-10">자녀 기록 열람</h2>
+                <p className="font-bold opacity-90 relative z-10">자녀의 이름과 비밀번호를 입력해주세요.</p>
+              </div>
+              <form onSubmit={handleAuth} className="bg-white/90 p-8 rounded-[2.5rem] shadow-sm border border-blue-100 space-y-5 max-w-md mx-auto">
+                <div>
+                  <label className="block text-sm font-black text-blue-900 mb-2 pl-3">자녀 이름</label>
+                  <input type="text" value={inputName} onChange={e=>setInputName(e.target.value)} className="w-full px-6 py-4 rounded-[1.5rem] bg-stone-50 border-none focus:ring-4 focus:ring-blue-100 font-bold text-lg text-stone-800" placeholder="이름 입력" required />
+                </div>
+                <div>
+                  <label className="block text-sm font-black text-blue-900 mb-2 pl-3">비밀번호</label>
+                  <input type="password" value={inputPwd} onChange={e=>setInputPwd(e.target.value)} className="w-full px-6 py-4 rounded-[1.5rem] bg-stone-50 border-none focus:ring-4 focus:ring-blue-100 font-bold text-lg text-stone-800" placeholder="비밀번호 입력" required />
+                </div>
+                {errorMsg && <div className="text-rose-500 font-bold text-center bg-rose-50 p-3 rounded-xl border border-rose-100">{errorMsg}</div>}
+                <button type="submit" className="w-full bg-blue-500 hover:bg-blue-600 text-white font-black py-4 rounded-[1.5rem] shadow-md transition text-lg">확인</button>
+              </form>
+            </div>
+          );
+        }
+
+        const targetId = currentUser.role === 'parent' ? authStudentId : currentUser.id;
+        const targetStudent = dbData.Users.find(u => u.id === targetId);
+
         const records = Array.isArray(dbData.Records) ? dbData.Records : [];
-        const myRecords = records.filter(r => r.studentId === currentUser.id).sort((a, b) => new Date(b.date) - new Date(a.date));
+        const myRecords = records.filter(r => r.studentId === targetId).sort((a, b) => new Date(b.date) - new Date(a.date));
 
         return (
           <div className="space-y-6">
             <div className="bg-gradient-to-r from-blue-100 to-indigo-100 p-8 rounded-[2.5rem] shadow-sm text-blue-900 relative overflow-hidden">
               <div className="absolute -right-4 -bottom-4 text-[8rem] opacity-30">📈</div>
-              <h2 className="text-3xl font-black mb-2 relative z-10">나의 기록</h2>
-              <p className="font-bold opacity-90 relative z-10">지금까지 쌓아온 나의 멋진 발자취입니다!</p>
+              <h2 className="text-3xl font-black mb-2 relative z-10">{targetStudent ? `${targetStudent.name}의 기록` : '나의 기록'}</h2>
+              <p className="font-bold opacity-90 relative z-10">{targetStudent ? '지금까지 쌓아온 멋진 발자취입니다!' : '지금까지 쌓아온 나의 멋진 발자취입니다!'}</p>
             </div>
 
             <div className="space-y-4">
