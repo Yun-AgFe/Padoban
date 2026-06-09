@@ -650,6 +650,14 @@
         const receivedLetters = letters.filter(l => l.receiverId === currentUser.id && l.status === 'approved' && l.tag !== '칭찬샤워').sort((a,b) => b.id - a.id);
         const sentLetters = letters.filter(l => l.senderId === currentUser.id && l.tag !== '칭찬샤워').sort((a,b) => b.id - a.id);
 
+        const senderCounts = {};
+        complimentLetters.forEach(l => {
+          senderCounts[l.senderName] = (senderCounts[l.senderName] || 0) + 1;
+        });
+        const topSenders = Object.entries(senderCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3);
+
         const handleSend = (e) => {
           e.preventDefault();
           if (!receiverId || !tag || !content) return;
@@ -2534,6 +2542,14 @@
         const letters = Array.isArray(dbData.Letters) ? dbData.Letters : [];
         const complimentLetters = letters.filter(l => l.tag === '칭찬샤워');
 
+        const senderCounts = {};
+        complimentLetters.filter(l => l.status === 'approved').forEach(l => {
+          senderCounts[l.senderName] = (senderCounts[l.senderName] || 0) + 1;
+        });
+        const topSenders = Object.entries(senderCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3);
+
         const handleToggleSelect = (id) => {
           if (newTargetIds.includes(id)) {
             setNewTargetIds(newTargetIds.filter(tid => tid !== id));
@@ -2641,6 +2657,23 @@
                   새로운 칭찬 대상 선정
                 </button>
               </div>
+            </div>
+
+            <div className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-stone-100">
+              <h3 className="text-lg font-black text-stone-800 mb-4">👑 칭찬 명예의 전당 (가장 많이 칭찬한 친구)</h3>
+              {topSenders.length === 0 ? (
+                <div className="text-center py-4 text-stone-400 font-bold bg-stone-50 rounded-2xl border border-dashed border-stone-200">아직 칭찬 기록이 없습니다.</div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {topSenders.map((sender, index) => (
+                    <div key={sender[0]} className="bg-gradient-to-b from-amber-50 to-orange-50 p-4 rounded-2xl border border-amber-200 flex flex-col items-center justify-center relative shadow-sm">
+                      <div className="text-3xl mb-1">{index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}</div>
+                      <div className="font-black text-stone-800 text-lg">{sender[0]}</div>
+                      <div className="text-sm font-bold text-amber-600 mt-1">{sender[1]}번 칭찬!</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2784,6 +2817,14 @@
         const letters = Array.isArray(dbData.Letters) ? dbData.Letters : [];
         const complimentLetters = letters.filter(l => l.tag === '칭찬샤워' && l.status === 'approved');
 
+        const senderCounts = {};
+        complimentLetters.forEach(l => {
+          senderCounts[l.senderName] = (senderCounts[l.senderName] || 0) + 1;
+        });
+        const topSenders = Object.entries(senderCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3);
+
         const handleSend = (e) => {
           e.preventDefault();
           if (!content.trim() || !selectedTarget || selectedTarget.isPast) return;
@@ -2814,6 +2855,23 @@
                 <h2 className="text-2xl font-black mb-2 flex items-center gap-2">🚿 이주의 칭찬 샤워</h2>
                 <p className="text-sky-800 font-bold opacity-90">이번 주 칭찬 대상자에게 따뜻한 마음을 전해 보세요!</p>
               </div>
+            </div>
+
+            <div className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-stone-100">
+              <h3 className="text-lg font-black text-stone-800 mb-4">👑 칭찬 명예의 전당 (가장 많이 칭찬한 친구)</h3>
+              {topSenders.length === 0 ? (
+                <div className="text-center py-4 text-stone-400 font-bold bg-stone-50 rounded-2xl border border-dashed border-stone-200">아직 칭찬 기록이 없습니다.</div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {topSenders.map((sender, index) => (
+                    <div key={sender[0]} className="bg-gradient-to-b from-amber-50 to-orange-50 p-4 rounded-2xl border border-amber-200 flex flex-col items-center justify-center relative shadow-sm">
+                      <div className="text-3xl mb-1">{index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}</div>
+                      <div className="font-black text-stone-800 text-lg">{sender[0]}</div>
+                      <div className="text-sm font-bold text-amber-600 mt-1">{sender[1]}번 칭찬!</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-stone-100">
