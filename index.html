@@ -229,13 +229,6 @@
             localStorage.setItem('padoUser', JSON.stringify(user)); // 브라우저에 저장
             setLoginError('');
             showToast(`환영합니다, ${user.name}님! 🌊`);
-
-            const pwdStr = String(user.pwd).trim();
-            if (user.role === 'student') {
-              if (!/^\d{4}$/.test(pwdStr) || ['1234', '1111', '0000'].includes(pwdStr)) {
-                setShowPwdModal(true);
-              }
-            }
           } else {
             setLoginError('이름이나 비밀번호가 틀렸습니다.');
           }
@@ -624,7 +617,7 @@
         ];
 
         const navItems = currentUser.role === 'parent' 
-          ? allNavItems.filter(item => item.id !== 'records' && item.id !== 'letters')
+          ? allNavItems.filter(item => item.id === 'profile' || item.id === 'records')
           : allNavItems;
 
         return (
@@ -1101,8 +1094,42 @@
       }
 
       function StudentRecords({ currentUser, dbData }) {
+        const [authStudent, setAuthStudent] = useState(null);
+        const [sName, setSName] = useState('');
+        const [sPwd, setSPwd] = useState('');
+        const [error, setError] = useState('');
+
+        const handleAuth = (e) => {
+          e.preventDefault();
+          const users = Array.isArray(dbData.Users) ? dbData.Users : [];
+          const user = users.find(u => u.role === 'student' && String(u.name).trim() === String(sName).trim() && String(u.pwd).trim() === String(sPwd).trim());
+          if (user) {
+            setAuthStudent(user);
+            setError('');
+          } else {
+            setError('이름이나 비밀번호가 일치하지 않습니다.');
+          }
+        };
+
         const records = Array.isArray(dbData.Records) ? dbData.Records : [];
-        const myRecords = records.filter(r => r.studentId === currentUser.id).sort((a, b) => new Date(b.date) - new Date(a.date));
+        const targetId = currentUser.role === 'parent' ? (authStudent ? authStudent.id : null) : currentUser.id;
+        const myRecords = targetId ? records.filter(r => r.studentId === targetId).sort((a, b) => new Date(b.date) - new Date(a.date)) : [];
+
+        if (currentUser.role === 'parent' && !authStudent) {
+          return (
+            <div className="bg-white/90 p-8 rounded-[2.5rem] shadow-sm border border-cyan-100 text-center max-w-md mx-auto mt-10">
+              <div className="text-5xl mb-4">🔒</div>
+              <h3 className="font-black text-2xl text-cyan-800 mb-2">자녀 성적 열람</h3>
+              <p className="text-stone-500 font-bold mb-6">학생의 이름과 비밀번호를 입력해주세요.</p>
+              <form onSubmit={handleAuth} className="space-y-4">
+                <input type="text" placeholder="학생 이름" value={sName} onChange={e => setSName(e.target.value)} className="w-full bg-stone-50 border-2 border-stone-100 rounded-2xl px-4 py-3 font-bold focus:outline-none focus:border-cyan-400 focus:ring-4 focus:ring-cyan-50" required />
+                <input type="password" placeholder="비밀번호" value={sPwd} onChange={e => setSPwd(e.target.value)} className="w-full bg-stone-50 border-2 border-stone-100 rounded-2xl px-4 py-3 font-bold focus:outline-none focus:border-cyan-400 focus:ring-4 focus:ring-cyan-50" required />
+                {error && <p className="text-rose-500 font-bold text-sm animate-pulse">{error}</p>}
+                <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-600 text-white font-black py-4 rounded-2xl shadow-sm transition">확인</button>
+              </form>
+            </div>
+          );
+        }
 
         return (
           <div className="space-y-6">
