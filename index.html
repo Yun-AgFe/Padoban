@@ -47,6 +47,27 @@
         return str.startsWith('http://') || str.startsWith('https://') || str.startsWith('data:image/');
       };
 
+      const MiniAvatar = ({ student, shopItems, sizeClass = "w-8 h-8", textClass = "text-xl", borderClass = "border-2 border-white", shadowClass = "shadow-sm", onClick }) => {
+        if (!student) return null;
+        const equippedItems = Array.isArray(student.equippedItems) ? student.equippedItems : [];
+        const safeShopItems = Array.isArray(shopItems) ? shopItems : [];
+        const equippedIcons = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon).filter(Boolean);
+        
+        return (
+          <div className={`relative ${sizeClass} bg-orange-50 rounded-full flex items-center justify-center ${borderClass} ${shadowClass} shrink-0 overflow-hidden ${onClick ? 'cursor-pointer hover:border-orange-300 transition-colors' : ''}`} onClick={onClick}>
+            {equippedIcons.length === 0 ? (
+               student.faceUrl ? ( <img src={student.faceUrl} alt="프로필" className="w-full h-full object-cover" /> ) : ( <span className={textClass}>{student.gender === 'M' ? '👦' : (student.gender === 'F' ? '👧' : '👤')}</span> )
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center drop-shadow-sm bg-white">
+                {equippedIcons.map((icon, idx) => (
+                  isImageUrl(icon) ? <img key={idx} src={icon} alt="장착" className="absolute w-full h-full object-contain p-[10%]" /> : <span key={idx} className={`absolute ${textClass}`}>{safeText(icon)}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      };
+
       const ColorizeText = ({ text }) => {
         if (!text) return <span className="text-slate-400 text-xs">정보 없음</span>;
         return (
@@ -616,7 +637,7 @@
               ))}
             </div>
 
-            {activeTab === 'profile' && <StudentProfile currentUser={currentUser} shopItems={dbData.ShopItems} jobs={dbData.Jobs} updateStudentData={updateStudentData} showToast={showToast} onOpenPwdModal={onOpenPwdModal} />}
+            {activeTab === 'profile' && <StudentProfile currentUser={currentUser} shopItems={dbData.ShopItems} jobs={dbData.Jobs} updateStudentData={updateStudentData} showToast={showToast} onOpenPwdModal={onOpenPwdModal} allStudents={dbData.Users} />}
             {activeTab === 'records' && <StudentRecords currentUser={currentUser} dbData={dbData} />}
             {activeTab === 'tasks' && <TaskManagerStudent currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
             {/* 💡 편지함 학생 컴포넌트 연결 */}
@@ -743,6 +764,7 @@
                       <div className="flex justify-between items-start mb-3">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="bg-pink-100 text-pink-800 px-3 py-1 rounded-full text-xs font-black">{safeText(l.tag)}</span>
+                          <MiniAvatar student={dbData.Users.find(u => u.name === l.senderName)} shopItems={dbData.ShopItems} sizeClass="w-8 h-8" textClass="text-base" borderClass="border border-pink-200" shadowClass="" />
                           <span className="font-black text-lg text-stone-800">{safeText(l.senderName)}의 편지 💌</span>
                         </div>
                         <span className="text-xs text-stone-400 font-bold mt-1">{safeText(l.date)}</span>
@@ -764,7 +786,9 @@
                       <div className="flex justify-between items-start mb-3">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="bg-stone-200 text-stone-700 px-3 py-1 rounded-full text-xs font-black">{safeText(l.tag)}</span>
-                          <span className="font-bold text-stone-600">To. {safeText(l.receiverName)}</span>
+                          <span className="font-bold text-stone-600">To.</span>
+                          <MiniAvatar student={dbData.Users.find(u => u.name === l.receiverName)} shopItems={dbData.ShopItems} sizeClass="w-6 h-6" textClass="text-xs" borderClass="border border-stone-200" shadowClass="" />
+                          <span className="font-bold text-stone-600">{safeText(l.receiverName)}</span>
                         </div>
                         <span className={`text-xs font-black px-3 py-1 rounded-xl shadow-sm ${l.status === 'pending' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'}`}>
                           {l.status === 'pending' ? '승인 대기중 ⏳' : '발송 완료 🕊️'}
@@ -846,8 +870,10 @@
                     <div key={l.id} className="bg-white p-6 rounded-[2rem] shadow-sm border border-pink-200">
                       <div className="flex justify-between items-center mb-4 border-b border-stone-100 pb-3">
                         <div className="flex items-center flex-wrap gap-2">
+                          <MiniAvatar student={dbData.Users.find(u => u.name === l.senderName)} shopItems={dbData.ShopItems} sizeClass="w-8 h-8" textClass="text-base" borderClass="border border-stone-200" shadowClass="" />
                           <span className="font-black text-lg text-stone-800">{safeText(l.senderName)}</span>
                           <span className="text-stone-400 font-bold">👉</span>
+                          <MiniAvatar student={dbData.Users.find(u => u.name === l.receiverName)} shopItems={dbData.ShopItems} sizeClass="w-8 h-8" textClass="text-base" borderClass="border border-stone-200" shadowClass="" />
                           <span className="font-black text-lg text-stone-800">{safeText(l.receiverName)}</span>
                         </div>
                         <span className="bg-pink-100 text-pink-800 px-3 py-1 rounded-full text-xs font-black">{safeText(l.tag)}</span>
@@ -872,8 +898,12 @@
                     <div key={l.id} className="bg-white p-6 rounded-[2rem] shadow-sm border border-stone-100 relative group overflow-hidden">
                       <div className="absolute top-0 right-0 w-24 h-24 bg-stone-50 rounded-bl-[100px] -z-10 group-hover:scale-110 transition-transform"></div>
                       <div className="flex justify-between items-center mb-3">
-                        <div className="flex items-center gap-2">
-                          <span className="font-black text-stone-700">{safeText(l.senderName)} 👉 {safeText(l.receiverName)}</span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <MiniAvatar student={dbData.Users.find(u => u.name === l.senderName)} shopItems={dbData.ShopItems} sizeClass="w-6 h-6" textClass="text-xs" borderClass="border border-stone-200" shadowClass="" />
+                          <span className="font-black text-stone-700">{safeText(l.senderName)}</span>
+                          <span className="text-stone-400 font-bold">👉</span>
+                          <MiniAvatar student={dbData.Users.find(u => u.name === l.receiverName)} shopItems={dbData.ShopItems} sizeClass="w-6 h-6" textClass="text-xs" borderClass="border border-stone-200" shadowClass="" />
+                          <span className="font-black text-stone-700">{safeText(l.receiverName)}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="bg-stone-100 text-stone-600 px-3 py-1 rounded-full text-xs font-black">{safeText(l.tag)}</span>
@@ -1870,7 +1900,7 @@
       }
 
 
-      function StudentProfile({ currentUser, shopItems, jobs, updateStudentData, showToast, onOpenPwdModal }) {
+      function StudentProfile({ currentUser, shopItems, jobs, updateStudentData, showToast, onOpenPwdModal, allStudents = [] }) {
         const currentExp = currentUser.exp % EXP_PER_LEVEL;
         const expPercent = (currentExp / EXP_PER_LEVEL) * 100;
 
@@ -1883,6 +1913,7 @@
 
         const [isEditingIntro, setIsEditingIntro] = useState(false);
         const [introText, setIntroText] = useState(currentUser.intro || '');
+        const [selectedStudentProfile, setSelectedStudentProfile] = useState(null);
         
         const toggleEquip = (itemId) => {
           let newEquipped = [...equippedItems];
@@ -2030,7 +2061,21 @@
                   })}
                 </div>
               )}
+            <div className="bg-white/90 p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-cyan-100 mt-6">
+              <h3 className="font-black text-xl mb-5 text-cyan-800 flex items-center gap-2">🧑‍🤝‍🧑 우리반 친구들</h3>
+              <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-4">
+                {allStudents.filter(u => u.role === 'student').map(student => (
+                  <button key={student.id} onClick={() => setSelectedStudentProfile(student)} className="flex flex-col items-center gap-2 hover:scale-105 transition-transform group">
+                    <MiniAvatar student={student} shopItems={safeShopItems} sizeClass="w-14 h-14" textClass="text-3xl" borderClass="border-2 border-transparent group-hover:border-cyan-300 transition-colors" shadowClass="shadow-sm" />
+                    <span className="text-xs font-black text-stone-700">{safeText(student.name)}</span>
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {selectedStudentProfile && (
+              <StudentProfileModal student={selectedStudentProfile} shopItems={safeShopItems} jobs={safeJobs} onClose={() => setSelectedStudentProfile(null)} />
+            )}
           </div>
         );
       }
@@ -2228,6 +2273,7 @@
                       <div className="flex-1">
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex items-center gap-3 flex-wrap">
+                            <MiniAvatar student={postUser} shopItems={dbData.ShopItems} sizeClass="w-10 h-10" textClass="text-2xl" borderClass="border border-stone-200" shadowClass="shadow-sm" onClick={() => postUser && setSelectedStudentProfile(postUser)} />
                             <button onClick={() => postUser && setSelectedStudentProfile(postUser)} className="font-black text-stone-800 text-xl hover:text-sky-500 transition-colors flex items-center gap-2">
                               {safeText(post.studentName)}
                             </button>
