@@ -222,7 +222,8 @@
             showToast('학부모님 환영합니다! 🌊');
             return;
           }
-          const user = dbData.Users.find(u => String(u.name).trim() === String(loginName).trim() && String(u.pwd).trim() === String(loginPwd).trim());
+          const users = Array.isArray(dbData.Users) ? dbData.Users : [];
+          const user = users.find(u => String(u.name).trim() === String(loginName).trim() && String(u.pwd).trim() === String(loginPwd).trim());
           
           if (user) {
             setCurrentUser(user);
@@ -632,7 +633,7 @@
               ))}
             </div>
 
-            {activeTab === 'profile' && <StudentProfile currentUser={currentUser} shopItems={dbData.ShopItems} jobs={dbData.Jobs} updateStudentData={updateStudentData} showToast={showToast} onOpenPwdModal={onOpenPwdModal} />}
+            {activeTab === 'profile' && <StudentProfile currentUser={currentUser} shopItems={dbData.ShopItems} jobs={dbData.Jobs} updateStudentData={updateStudentData} showToast={showToast} allStudents={Array.isArray(dbData.Users) ? dbData.Users : []} />}
             {activeTab === 'records' && <StudentRecords currentUser={currentUser} dbData={dbData} />}
             {activeTab === 'tasks' && <TaskManagerStudent currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
             {/* 💡 편지함 학생 컴포넌트 연결 */}
@@ -1964,9 +1965,6 @@
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <div className="flex items-center gap-1 text-amber-800 bg-amber-100 px-5 py-2.5 rounded-2xl font-black shadow-sm text-lg">🪙 {currentUser.money} 결</div>
-                    <button onClick={onOpenPwdModal} className="text-[10px] bg-white border border-stone-200 text-stone-600 px-3 py-1.5 rounded-full font-bold shadow-sm hover:bg-stone-50 flex items-center gap-1">
-                      🔑 비밀번호 변경
-                    </button>
                   </div>
                 </div>
 
