@@ -618,7 +618,7 @@
         ];
 
         const navItems = currentUser.role === 'parent' 
-          ? allNavItems.filter(item => ['profile', 'records', 'emotions', 'compliment'].includes(item.id))
+          ? allNavItems.filter(item => ['profile', 'records', 'emotions', 'compliment', 'shop'].includes(item.id))
           : allNavItems;
 
         return (
@@ -2941,6 +2941,14 @@
         const letters = Array.isArray(dbData.Letters) ? dbData.Letters : [];
         const complimentLetters = letters.filter(l => l.tag === '칭찬샤워' && l.status === 'approved');
 
+
+          const senderCounts = {};
+          complimentLetters.forEach(l => {
+            senderCounts[l.senderName] = (senderCounts[l.senderName] || 0) + 1;
+          });
+          const topSenders = Object.entries(senderCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3);
 
         const handleSend = (e) => {
           e.preventDefault();
