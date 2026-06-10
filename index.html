@@ -618,7 +618,7 @@
         ];
 
         const navItems = currentUser.role === 'parent' 
-          ? allNavItems.filter(item => item.id === 'profile' || item.id === 'records')
+          ? allNavItems.filter(item => ['profile', 'records', 'emotions', 'compliment'].includes(item.id))
           : allNavItems;
 
         return (
@@ -679,13 +679,6 @@
         const receivedLetters = letters.filter(l => l.receiverId === currentUser.id && l.status === 'approved' && l.tag !== '칭찬샤워').sort((a,b) => b.id - a.id);
         const sentLetters = letters.filter(l => l.senderId === currentUser.id && l.tag !== '칭찬샤워').sort((a,b) => b.id - a.id);
 
-        const senderCounts = {};
-        complimentLetters.forEach(l => {
-          senderCounts[l.senderName] = (senderCounts[l.senderName] || 0) + 1;
-        });
-        const topSenders = Object.entries(senderCounts)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 3);
 
         const handleSend = (e) => {
           e.preventDefault();
@@ -2948,13 +2941,6 @@
         const letters = Array.isArray(dbData.Letters) ? dbData.Letters : [];
         const complimentLetters = letters.filter(l => l.tag === '칭찬샤워' && l.status === 'approved');
 
-        const senderCounts = {};
-        complimentLetters.forEach(l => {
-          senderCounts[l.senderName] = (senderCounts[l.senderName] || 0) + 1;
-        });
-        const topSenders = Object.entries(senderCounts)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 3);
 
         const handleSend = (e) => {
           e.preventDefault();
