@@ -232,7 +232,9 @@
 
             const pwdStr = String(user.pwd).trim();
             if (user.role === 'student') {
-              // 학생 스스로 비밀번호를 변경하지 못하도록 변경 창 띄우지 않음
+              if (!/^\d{4}$/.test(pwdStr) || ['1234', '1111', '0000'].includes(pwdStr)) {
+                setShowPwdModal(true);
+              }
             }
           } else {
             setLoginError('이름이나 비밀번호가 틀렸습니다.');
@@ -613,7 +615,7 @@
           { id: 'profile', label: '내 정보', icon: '🐳' },
           { id: 'records', label: '나의 기록', icon: '📈' }, 
           { id: 'tasks', label: '할 일', icon: '📝', badge: unsubmittedTasksCount },
-          { id: 'letters', label: '편지함', icon: '📮', badge: unreadLettersCount }, // 💡 편지함 탭
+          { id: 'letters', label: '편지함', icon: '📮', badge: unreadLettersCount },
           { id: 'emotions', label: '마음 일기', icon: '🫧' },
           { id: 'compliment', label: '칭찬샤워', icon: '🚿' },
           { id: 'halloffame', label: '명예의 전당', icon: '🏆' },
@@ -622,7 +624,7 @@
         ];
 
         const navItems = currentUser.role === 'parent' 
-          ? allNavItems.filter(item => item.id !== 'letters')
+          ? allNavItems.filter(item => item.id !== 'records' && item.id !== 'letters')
           : allNavItems;
 
         return (
@@ -637,7 +639,7 @@
               ))}
             </div>
 
-            {activeTab === 'profile' && <StudentProfile currentUser={currentUser} shopItems={dbData.ShopItems} jobs={dbData.Jobs} updateStudentData={updateStudentData} showToast={showToast} onOpenPwdModal={onOpenPwdModal} allStudents={dbData.Users} />}
+            {activeTab === 'profile' && <StudentProfile currentUser={currentUser} shopItems={dbData.ShopItems} jobs={dbData.Jobs} updateStudentData={updateStudentData} showToast={showToast} onOpenPwdModal={onOpenPwdModal} />}
             {activeTab === 'records' && <StudentRecords currentUser={currentUser} dbData={dbData} />}
             {activeTab === 'tasks' && <TaskManagerStudent currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
             {/* 💡 편지함 학생 컴포넌트 연결 */}
@@ -683,6 +685,13 @@
         const receivedLetters = letters.filter(l => l.receiverId === currentUser.id && l.status === 'approved' && l.tag !== '칭찬샤워').sort((a,b) => b.id - a.id);
         const sentLetters = letters.filter(l => l.senderId === currentUser.id && l.tag !== '칭찬샤워').sort((a,b) => b.id - a.id);
 
+        const senderCounts = {};
+        complimentLetters.forEach(l => {
+          senderCounts[l.senderName] = (senderCounts[l.senderName] || 0) + 1;
+        });
+        const topSenders = Object.entries(senderCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3);
 
         const handleSend = (e) => {
           e.preventDefault();
@@ -764,7 +773,7 @@
                       <div className="flex justify-between items-start mb-3">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="bg-pink-100 text-pink-800 px-3 py-1 rounded-full text-xs font-black">{safeText(l.tag)}</span>
-                          <MiniAvatar student={dbData.Users.find(u => u.name === l.senderName)} shopItems={dbData.ShopItems} sizeClass="w-8 h-8" textClass="text-base" borderClass="border border-pink-200" shadowClass="" />
+                          <MiniAvatar student={(Array.isArray(dbData.Users) ? dbData.Users : []).find(u => u.name === l.senderName)} shopItems={dbData.ShopItems} sizeClass="w-8 h-8" textClass="text-base" borderClass="border border-pink-200" shadowClass="" />
                           <span className="font-black text-lg text-stone-800">{safeText(l.senderName)}의 편지 💌</span>
                         </div>
                         <span className="text-xs text-stone-400 font-bold mt-1">{safeText(l.date)}</span>
@@ -787,7 +796,7 @@
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="bg-stone-200 text-stone-700 px-3 py-1 rounded-full text-xs font-black">{safeText(l.tag)}</span>
                           <span className="font-bold text-stone-600">To.</span>
-                          <MiniAvatar student={dbData.Users.find(u => u.name === l.receiverName)} shopItems={dbData.ShopItems} sizeClass="w-6 h-6" textClass="text-xs" borderClass="border border-stone-200" shadowClass="" />
+                          <MiniAvatar student={(Array.isArray(dbData.Users) ? dbData.Users : []).find(u => u.name === l.receiverName)} shopItems={dbData.ShopItems} sizeClass="w-6 h-6" textClass="text-xs" borderClass="border border-stone-200" shadowClass="" />
                           <span className="font-bold text-stone-600">{safeText(l.receiverName)}</span>
                         </div>
                         <span className={`text-xs font-black px-3 py-1 rounded-xl shadow-sm ${l.status === 'pending' ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'}`}>
@@ -870,10 +879,10 @@
                     <div key={l.id} className="bg-white p-6 rounded-[2rem] shadow-sm border border-pink-200">
                       <div className="flex justify-between items-center mb-4 border-b border-stone-100 pb-3">
                         <div className="flex items-center flex-wrap gap-2">
-                          <MiniAvatar student={dbData.Users.find(u => u.name === l.senderName)} shopItems={dbData.ShopItems} sizeClass="w-8 h-8" textClass="text-base" borderClass="border border-stone-200" shadowClass="" />
+                          <MiniAvatar student={(Array.isArray(dbData.Users) ? dbData.Users : []).find(u => u.name === l.senderName)} shopItems={dbData.ShopItems} sizeClass="w-8 h-8" textClass="text-base" borderClass="border border-stone-200" shadowClass="" />
                           <span className="font-black text-lg text-stone-800">{safeText(l.senderName)}</span>
                           <span className="text-stone-400 font-bold">👉</span>
-                          <MiniAvatar student={dbData.Users.find(u => u.name === l.receiverName)} shopItems={dbData.ShopItems} sizeClass="w-8 h-8" textClass="text-base" borderClass="border border-stone-200" shadowClass="" />
+                          <MiniAvatar student={(Array.isArray(dbData.Users) ? dbData.Users : []).find(u => u.name === l.receiverName)} shopItems={dbData.ShopItems} sizeClass="w-8 h-8" textClass="text-base" borderClass="border border-stone-200" shadowClass="" />
                           <span className="font-black text-lg text-stone-800">{safeText(l.receiverName)}</span>
                         </div>
                         <span className="bg-pink-100 text-pink-800 px-3 py-1 rounded-full text-xs font-black">{safeText(l.tag)}</span>
@@ -899,10 +908,10 @@
                       <div className="absolute top-0 right-0 w-24 h-24 bg-stone-50 rounded-bl-[100px] -z-10 group-hover:scale-110 transition-transform"></div>
                       <div className="flex justify-between items-center mb-3">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <MiniAvatar student={dbData.Users.find(u => u.name === l.senderName)} shopItems={dbData.ShopItems} sizeClass="w-6 h-6" textClass="text-xs" borderClass="border border-stone-200" shadowClass="" />
+                          <MiniAvatar student={(Array.isArray(dbData.Users) ? dbData.Users : []).find(u => u.name === l.senderName)} shopItems={dbData.ShopItems} sizeClass="w-6 h-6" textClass="text-xs" borderClass="border border-stone-200" shadowClass="" />
                           <span className="font-black text-stone-700">{safeText(l.senderName)}</span>
                           <span className="text-stone-400 font-bold">👉</span>
-                          <MiniAvatar student={dbData.Users.find(u => u.name === l.receiverName)} shopItems={dbData.ShopItems} sizeClass="w-6 h-6" textClass="text-xs" borderClass="border border-stone-200" shadowClass="" />
+                          <MiniAvatar student={(Array.isArray(dbData.Users) ? dbData.Users : []).find(u => u.name === l.receiverName)} shopItems={dbData.ShopItems} sizeClass="w-6 h-6" textClass="text-xs" borderClass="border border-stone-200" shadowClass="" />
                           <span className="font-black text-stone-700">{safeText(l.receiverName)}</span>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1092,58 +1101,15 @@
       }
 
       function StudentRecords({ currentUser, dbData }) {
-        const [authStudentId, setAuthStudentId] = useState(null);
-        const [inputName, setInputName] = useState('');
-        const [inputPwd, setInputPwd] = useState('');
-        const [errorMsg, setErrorMsg] = useState('');
-
-        if (currentUser.role === 'parent' && !authStudentId) {
-          const handleAuth = (e) => {
-            e.preventDefault();
-            const student = dbData.Users.find(u => u.role === 'student' && String(u.name).trim() === String(inputName).trim() && String(u.pwd).trim() === String(inputPwd).trim());
-            if (student) {
-              setAuthStudentId(student.id);
-              setErrorMsg('');
-            } else {
-              setErrorMsg('이름이나 비밀번호가 일치하지 않습니다.');
-            }
-          };
-
-          return (
-            <div className="space-y-6">
-              <div className="bg-gradient-to-r from-blue-100 to-indigo-100 p-8 rounded-[2.5rem] shadow-sm text-blue-900 relative overflow-hidden">
-                <div className="absolute -right-4 -bottom-4 text-[8rem] opacity-30">📈</div>
-                <h2 className="text-3xl font-black mb-2 relative z-10">자녀 기록 열람</h2>
-                <p className="font-bold opacity-90 relative z-10">자녀의 이름과 비밀번호를 입력해주세요.</p>
-              </div>
-              <form onSubmit={handleAuth} className="bg-white/90 p-8 rounded-[2.5rem] shadow-sm border border-blue-100 space-y-5 max-w-md mx-auto">
-                <div>
-                  <label className="block text-sm font-black text-blue-900 mb-2 pl-3">자녀 이름</label>
-                  <input type="text" value={inputName} onChange={e=>setInputName(e.target.value)} className="w-full px-6 py-4 rounded-[1.5rem] bg-stone-50 border-none focus:ring-4 focus:ring-blue-100 font-bold text-lg text-stone-800" placeholder="이름 입력" required />
-                </div>
-                <div>
-                  <label className="block text-sm font-black text-blue-900 mb-2 pl-3">비밀번호</label>
-                  <input type="password" value={inputPwd} onChange={e=>setInputPwd(e.target.value)} className="w-full px-6 py-4 rounded-[1.5rem] bg-stone-50 border-none focus:ring-4 focus:ring-blue-100 font-bold text-lg text-stone-800" placeholder="비밀번호 입력" required />
-                </div>
-                {errorMsg && <div className="text-rose-500 font-bold text-center bg-rose-50 p-3 rounded-xl border border-rose-100">{errorMsg}</div>}
-                <button type="submit" className="w-full bg-blue-500 hover:bg-blue-600 text-white font-black py-4 rounded-[1.5rem] shadow-md transition text-lg">확인</button>
-              </form>
-            </div>
-          );
-        }
-
-        const targetId = currentUser.role === 'parent' ? authStudentId : currentUser.id;
-        const targetStudent = dbData.Users.find(u => u.id === targetId);
-
         const records = Array.isArray(dbData.Records) ? dbData.Records : [];
-        const myRecords = records.filter(r => r.studentId === targetId).sort((a, b) => new Date(b.date) - new Date(a.date));
+        const myRecords = records.filter(r => r.studentId === currentUser.id).sort((a, b) => new Date(b.date) - new Date(a.date));
 
         return (
           <div className="space-y-6">
             <div className="bg-gradient-to-r from-blue-100 to-indigo-100 p-8 rounded-[2.5rem] shadow-sm text-blue-900 relative overflow-hidden">
               <div className="absolute -right-4 -bottom-4 text-[8rem] opacity-30">📈</div>
-              <h2 className="text-3xl font-black mb-2 relative z-10">{targetStudent ? `${targetStudent.name}의 기록` : '나의 기록'}</h2>
-              <p className="font-bold opacity-90 relative z-10">{targetStudent ? '지금까지 쌓아온 멋진 발자취입니다!' : '지금까지 쌓아온 나의 멋진 발자취입니다!'}</p>
+              <h2 className="text-3xl font-black mb-2 relative z-10">나의 기록</h2>
+              <p className="font-bold opacity-90 relative z-10">지금까지 쌓아온 나의 멋진 발자취입니다!</p>
             </div>
 
             <div className="space-y-4">
@@ -1368,7 +1334,7 @@
                    ) : (
                       <div className="absolute inset-0 flex items-center justify-center drop-shadow-md bg-white">
                         {equippedIcons.map((icon, idx) => (
-                          isImageUrl(icon) ? <img key={idx} src={icon} alt="장착" className="absolute w-full h-full object-contain p-1" /> : <span key={idx} className="absolute text-[3.5rem]">{safeText(icon)}</span>
+                          isImageUrl(icon) ? <img key={idx} src={icon} alt="장착" className="absolute w-12 h-12 object-contain" /> : <span key={idx} className="absolute text-3xl">{safeText(icon)}</span>
                         ))}
                       </div>
                    )}
@@ -1900,7 +1866,7 @@
       }
 
 
-      function StudentProfile({ currentUser, shopItems, jobs, updateStudentData, showToast, onOpenPwdModal, allStudents = [] }) {
+      function StudentProfile({ currentUser, shopItems, jobs, updateStudentData, showToast, allStudents = [] }) {
         const currentExp = currentUser.exp % EXP_PER_LEVEL;
         const expPercent = (currentExp / EXP_PER_LEVEL) * 100;
 
@@ -1954,7 +1920,7 @@
                   )}
                   <div className="absolute inset-0 flex items-center justify-center drop-shadow-lg pointer-events-none">
                     {equippedIcons.map((icon, idx) => (
-                      isImageUrl(icon) ? <img key={idx} src={icon} alt="장착" className="absolute w-full h-full object-contain p-2" /> : <span key={idx} className="absolute text-[7rem]">{safeText(icon)}</span>
+                      isImageUrl(icon) ? <img key={idx} src={icon} alt="장착" className="absolute w-28 h-28 object-contain" /> : <span key={idx} className="absolute text-[5rem]">{safeText(icon)}</span>
                     ))}
                   </div>
                 </div>
@@ -1971,6 +1937,9 @@
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <div className="flex items-center gap-1 text-amber-800 bg-amber-100 px-5 py-2.5 rounded-2xl font-black shadow-sm text-lg">🪙 {currentUser.money} 결</div>
+                    <button onClick={onOpenPwdModal} className="text-[10px] bg-white border border-stone-200 text-stone-600 px-3 py-1.5 rounded-full font-bold shadow-sm hover:bg-stone-50 flex items-center gap-1">
+                      🔑 비밀번호 변경
+                    </button>
                   </div>
                 </div>
 
@@ -2061,6 +2030,7 @@
                   })}
                 </div>
               )}
+            </div>
             <div className="bg-white/90 p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-cyan-100 mt-6">
               <h3 className="font-black text-xl mb-5 text-cyan-800 flex items-center gap-2">🧑‍🤝‍🧑 우리반 친구들</h3>
               <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-4">
@@ -2273,7 +2243,6 @@
                       <div className="flex-1">
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex items-center gap-3 flex-wrap">
-                            <MiniAvatar student={postUser} shopItems={dbData.ShopItems} sizeClass="w-10 h-10" textClass="text-2xl" borderClass="border border-stone-200" shadowClass="shadow-sm" onClick={() => postUser && setSelectedStudentProfile(postUser)} />
                             <button onClick={() => postUser && setSelectedStudentProfile(postUser)} className="font-black text-stone-800 text-xl hover:text-sky-500 transition-colors flex items-center gap-2">
                               {safeText(post.studentName)}
                             </button>
@@ -2362,7 +2331,7 @@
                    )}
                    <div className="absolute inset-0 flex items-center justify-center drop-shadow-md pointer-events-none">
                      {equippedIcons.map((icon, idx) => (
-                       isImageUrl(icon) ? <img key={idx} src={icon} alt="장착" className="absolute w-full h-full object-contain p-2" /> : <span key={idx} className="absolute text-[6rem]">{safeText(icon)}</span>
+                       isImageUrl(icon) ? <img key={idx} src={icon} alt="장착" className="absolute w-24 h-24 object-contain" /> : <span key={idx} className="absolute text-[4rem]">{safeText(icon)}</span>
                      ))}
                    </div>
                 </div>
@@ -3040,7 +3009,7 @@
                     const count = complimentLetters.filter(l => l.receiverId === t.studentId).length;
                     return (
                       <button key={t.id} onClick={() => setSelectedTarget({ id: t.studentId, name: t.studentName, isPast: false })} className={`p-4 rounded-2xl transition flex flex-col items-center justify-center border-2 ${selectedTarget?.id === t.studentId ? 'border-cyan-400 bg-cyan-50 shadow-md transform scale-105' : 'border-stone-100 bg-stone-50 hover:border-cyan-200'}`}>
-                        <div className="text-4xl mb-2">🚿</div>
+                        <div className="mb-2"><MiniAvatar student={(Array.isArray(dbData.Users) ? dbData.Users : []).find(u => u.id === t.studentId)} shopItems={dbData.ShopItems} sizeClass="w-12 h-12" textClass="text-2xl" borderClass="border border-stone-200" shadowClass="" /></div>
                         <div className="font-black text-stone-800 text-lg">{t.studentName}</div>
                         <div className="text-sm font-bold text-cyan-600 mt-1">칭찬 {count}개</div>
                       </button>
@@ -3125,3 +3094,4 @@
     </script>
   </body>
 </html>
+
