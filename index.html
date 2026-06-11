@@ -619,7 +619,6 @@
             { id: 'halloffame', label: '명예의 전당', icon: '🏆' },
             { id: 'jobs', label: '직업 관리', icon: '💼' },
             { id: 'shop', label: '상점 아이템', icon: '🏪' },
-            { id: 'logs', label: '보상 기록', icon: '📜' },
             { id: 'approvals', label: `아이템 승인 (${dbData.PendingItems?.length || 0})`, icon: '🎁' },
           ];
 
@@ -676,7 +675,6 @@
                 {activeTab === 'compliment' && <ComplimentManagerTeacher dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
                 {activeTab === 'announcements' && <AnnouncementManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
                                 {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
-                {activeTab === 'logs' && <RewardLogViewer dbData={dbData} />}
                 {activeTab === 'jobs' && <JobManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
                 {activeTab === 'shop' && <ShopManagerTeacher dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
                 {activeTab === 'approvals' && <ApprovalManager dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
@@ -710,7 +708,6 @@
           { id: 'halloffame', label: '명예의 전당', icon: '🏆' },
           { id: 'announcements', label: '알림장', icon: '📢' },
           { id: 'shop', label: '상점', icon: '🛍️' },
-            { id: 'logs', label: '보상 기록', icon: '📜' },
         ];
 
         const navItems = currentUser.role === 'parent' 
@@ -738,7 +735,6 @@
             {activeTab === 'compliment' && <ComplimentShowerStudent currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
             {activeTab === 'shop' && <Shop currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
                             {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
-                {activeTab === 'logs' && <RewardLogViewer dbData={dbData} />}
             {activeTab === 'announcements' && (
               <div className="space-y-4">
                 <h2 className="font-black text-2xl pl-2 flex items-center gap-2 text-cyan-800">📢 선생님 알림장</h2>
