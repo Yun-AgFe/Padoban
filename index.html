@@ -236,7 +236,7 @@
           }
         };
 
-        const updateStudentData = (studentId, updates, reason = '?쒖뒪??) => {
+        const updateStudentData = (studentId, updates, reason = '시스템') => {
           const studentToUpdate = dbData.Users.find(u => u.id === studentId);
           if (!studentToUpdate) return;
           
@@ -1335,7 +1335,7 @@
           if (ownedItems.some(id => String(id) === String(item.id))) return showToast('이미 가진 아이템이에요!');
           if (currentUser.money < item.price) return showToast('돈이 부족해요!');
           
-          updateStudentData(currentUser.id, { money: Number(currentUser.money || 0) - item.price, ownedItems: [...ownedItems, item.id] }, '?곸젏 臾쇳뭹 援щℓ');
+          updateStudentData(currentUser.id, { money: Number(currentUser.money || 0) - item.price, ownedItems: [...ownedItems, item.id] }, '상점 물품 구매');
           
           const newLog = {
             id: Date.now().toString(),
@@ -1474,11 +1474,11 @@
             <div className="space-y-3">
               <div className="flex gap-2">
                 <input type="number" placeholder="경험치 (예:10)" value={expAmount} onChange={e => setExpAmount(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-sky-300 font-bold text-stone-800" />
-                <button onClick={() => { updateStudentData(student.id, { exp: Number(student.exp) + Number(expAmount) }, '援먯궗 媛쒕퀎 吏湲?); showToast(`${student.name} EXP 지급!`); setExpAmount(''); }} className="bg-sky-400 hover:bg-sky-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">EXP 지급</button>
+                <button onClick={() => { updateStudentData(student.id, { exp: Number(student.exp) + Number(expAmount) }, '교사 개별 지급'); showToast(`${student.name} EXP 지급!`); setExpAmount(''); }} className="bg-sky-400 hover:bg-sky-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">EXP 지급</button>
               </div>
               <div className="flex gap-2">
                 <input type="number" placeholder="용돈 (예:100)" value={moneyAmount} onChange={e => setMoneyAmount(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-amber-300 font-bold text-stone-800" />
-                <button onClick={() => { updateStudentData(student.id, { money: Number(student.money) + Number(moneyAmount) }, '援먯궗 媛쒕퀎 吏湲?); showToast(`${student.name} 용돈 지급!`); setMoneyAmount(''); }} className="bg-amber-400 hover:bg-amber-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">용돈 지급</button>
+                <button onClick={() => { updateStudentData(student.id, { money: Number(student.money) + Number(moneyAmount) }, '교사 개별 지급'); showToast(`${student.name} 용돈 지급!`); setMoneyAmount(''); }} className="bg-amber-400 hover:bg-amber-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">용돈 지급</button>
               </div>
               <div className="flex gap-2">
                 <input type="text" placeholder="새로운 칭호 하사하기" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-orange-300 font-bold text-stone-800" />
@@ -1711,7 +1711,7 @@
                 exp: Number(student.exp || 0) + expVal,
                 money: Number(student.money || 0) + moneyVal
               }, '?????꾨즺 蹂댁긽');
-             showToast(`${studentName} 학생 확인 완료! 보상 지급됨.`);
+              }, '할 일 완료 보상');
           } else {
              showToast(`${studentName} 학생 확인 완료!`);
           }
@@ -2216,7 +2216,7 @@
           syncToServer('Emotions', 'INSERT', null, newPost);
           
           if (currentUser.role === 'student' && updateStudentData) {
-            updateStudentData(currentUser.id, { exp: Number(currentUser.exp || 0) + 10 }, '留덉쓬 ?쇨린 ?묒꽦');
+            updateStudentData(currentUser.id, { exp: Number(currentUser.exp || 0) + 10 }, '마음 일기 작성');
           }
 
           setContent(''); setIsSecret(false);
@@ -2232,7 +2232,7 @@
             syncToServer('Emotions', 'DELETE', postToDelete, null);
             
             if (post && currentUser.role === 'student' && updateStudentData) {
-              updateStudentData(currentUser.id, { exp: Math.max(0, Number(currentUser.exp || 0) - 10) }, '留덉쓬 ?쇨린 ??젣');
+              updateStudentData(currentUser.id, { exp: Math.max(0, Number(currentUser.exp || 0) - 10) }, '마음 일기 삭제');
             }
             
             showToast('?쇨린媛 ??젣?섏뿀?듬땲?? (寃쏀뿕移?-10)');
@@ -2867,7 +2867,7 @@
               updateStudentData(letter.senderId, {
                 exp: Number(student.exp || 0) + expReward,
                 money: Number(student.money || 0) + moneyReward
-              }, '移?갔 ?ㅼ썙 蹂댁긽');
+              }, '칭찬 샤워 보상');
             }
           }
           
