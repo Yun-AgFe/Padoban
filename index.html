@@ -2125,13 +2125,21 @@
           showToast(isSecret ? '비밀 일기가 등록되었습니다. 🔒 (+10 EXP)' : '마음 일기를 작성하여 경험치 10을 얻었습니다! ⭐');
         };
 
-        const executeDelete = () => {
-          if (!postToDelete) return;
-          setDbData(prev => ({ ...prev, Emotions: prev.Emotions.filter(post => post.id !== postToDelete) }));
-          syncToServer('Emotions', 'DELETE', postToDelete, null);
-          showToast('일기가 삭제되었습니다.');
-          setPostToDelete(null);
-        };
+          const executeDelete = () => {
+            if (!postToDelete) return;
+            
+            const post = (dbData.Emotions || []).find(p => p.id === postToDelete);
+            
+            setDbData(prev => ({ ...prev, Emotions: prev.Emotions.filter(p => p.id !== postToDelete) }));
+            syncToServer('Emotions', 'DELETE', postToDelete, null);
+            
+            if (post && currentUser.role === 'student' && updateStudentData) {
+              updateStudentData(currentUser.id, { exp: Math.max(0, Number(currentUser.exp || 0) - 10) });
+            }
+            
+            showToast('?쇨린媛 ??젣?섏뿀?듬땲?? (寃쏀뿕移?-10)');
+            setPostToDelete(null);
+          };
 
         const handleLike = (postId) => {
           const post = emotionsData.find(p => p.id === postId);
