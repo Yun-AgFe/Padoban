@@ -263,7 +263,6 @@
           }
 
           const updatedStudent = { ...studentToUpdate, ...updates };
-          const updatedStudent = { ...studentToUpdate, ...updates };
           
           if (updates.exp !== undefined) {
             updatedStudent.exp = Number(updatedStudent.exp || 0);
@@ -303,17 +302,31 @@
           setSyncing(true);
           let newUsers = [...dbData.Users];
           const updatePayloads = [];
+          const newLogs = [];
 
           studentIds.forEach(id => {
             const student = newUsers.find(u => u.id === id);
             if (student) {
               const updated = { ...student };
+              const valNum = Number(val);
+              
+              if (valNum !== 0) {
+                newLogs.push({
+                  id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                  date: new Date().toLocaleString('ko-KR'),
+                  studentId: id,
+                  studentName: student.name,
+                  expDelta: type === 'exp' ? valNum : 0,
+                  moneyDelta: type === 'money' ? valNum : 0,
+                  reason: '교사 일괄 지급'
+                });
+              }
               
               if (type === 'exp') {
-                updated.exp = Number(student.exp || 0) + Number(val);
+                updated.exp = Number(student.exp || 0) + valNum;
                 updated.level = Math.floor(updated.exp / EXP_PER_LEVEL) + 1;
               } else if (type === 'money') {
-                updated.money = Number(student.money || 0) + Number(val);
+                updated.money = Number(student.money || 0) + valNum;
               }
               
               newUsers = newUsers.map(u => u.id === id ? updated : u);
