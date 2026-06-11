@@ -620,6 +620,7 @@
             { id: 'halloffame', label: '명예의 전당', icon: '🏆' },
             { id: 'jobs', label: '직업 관리', icon: '💼' },
             { id: 'shop', label: '상점 아이템', icon: '🏪' },
+            { id: 'logs', label: '보상 기록', icon: '📜' },
             { id: 'purchases', label: '구매 내역', icon: '🧾' },
             { id: 'approvals', label: `아이템 승인 (${dbData.PendingItems?.length || 0})`, icon: '🎁' },
           ];
@@ -712,10 +713,11 @@
           { id: 'halloffame', label: '명예의 전당', icon: '🏆' },
           { id: 'announcements', label: '알림장', icon: '📢' },
           { id: 'shop', label: '상점', icon: '🛍️' },
+            { id: 'logs', label: '보상 기록', icon: '📜' },
         ];
 
         const navItems = currentUser.role === 'parent' 
-          ? allNavItems.filter(item => ['profile', 'records', 'emotions', 'compliment', 'shop'].includes(item.id))
+            ? allNavItems.filter(item => ['profile', 'records', 'emotions', 'compliment', 'shop', 'logs'].includes(item.id))
           : allNavItems;
 
         return (
@@ -1710,8 +1712,8 @@
               updateStudentData(studentId, {
                 exp: Number(student.exp || 0) + expVal,
                 money: Number(student.money || 0) + moneyVal
-              }, '?????꾨즺 蹂댁긽');
               }, '할 일 완료 보상');
+
           } else {
              showToast(`${studentName} 학생 확인 완료!`);
           }
