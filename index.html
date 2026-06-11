@@ -1332,24 +1332,27 @@
         };
 
         const handleBuy = (item) => {
-          if (item.maxQuantity && getSoldCount(item) >= item.maxQuantity) return showToast('품절된 아이템입니다!');
-          if (ownedItems.some(id => String(id) === String(item.id))) return showToast('이미 가진 아이템이에요!');
-          if (currentUser.money < item.price) return showToast('돈이 부족해요!');
+          const itemPrice = Number(String(item.price).replace(/,/g, '')) || 0;
+          const itemName = item.name || item.itemName || '이름 없음';
           
-          updateStudentData(currentUser.id, { money: Number(currentUser.money || 0) - item.price, ownedItems: [...ownedItems, item.id] }, '상점 물품 구매');
+          if (item.maxQuantity && getSoldCount(item) >= item.maxQuantity) return showToast('품절입니다!');
+          if (ownedItems.some(id => String(id) === String(item.id))) return showToast('이미 보유한 아이템!');
+          if (currentUser.money < itemPrice) return showToast('용돈이 부족해요!');
+          
+          updateStudentData(currentUser.id, { money: Number(currentUser.money || 0) - itemPrice, ownedItems: [...ownedItems, item.id] }, '상점 구매: ' + itemName);
           
           const newLog = {
             id: Date.now().toString(),
             studentName: currentUser.name,
-            itemName: item.name,
-            price: item.price,
+            itemName: itemName,
+            price: itemPrice,
             date: new Date().toISOString()
           };
 
           setDbData(prev => ({ ...prev, PurchaseLogs: [newLog, ...(prev.PurchaseLogs || [])] }));
           syncToServer('PurchaseLogs', 'INSERT', null, newLog);
 
-          showToast(`${item.name} 구매 완료! 🛍️`);
+          showToast(itemName + ' 구매 완료! 🎁');
         };
 
         const handleUploadSubmit = (e) => {
@@ -1370,7 +1373,7 @@
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
               {shopItems.map((item, idx) => {
-                if (!item || !item.id) return null;
+                if (!item) return null; const safeId = item.id || ("temp_" + idx); item.id = safeId;
                 const isOwned = ownedItems.some(id => String(id) === String(item.id));
                 const soldCount = getSoldCount(item);
                 const isSoldOut = item.maxQuantity && soldCount >= item.maxQuantity;
