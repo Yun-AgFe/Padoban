@@ -620,7 +620,6 @@
             { id: 'jobs', label: '직업 관리', icon: '💼' },
             { id: 'shop', label: '상점 아이템', icon: '🏪' },
             { id: 'logs', label: '보상 기록', icon: '📜' },
-            { id: 'purchases', label: '구매 내역', icon: '🧾' },
             { id: 'approvals', label: `아이템 승인 (${dbData.PendingItems?.length || 0})`, icon: '🎁' },
           ];
 
@@ -680,7 +679,6 @@
                 {activeTab === 'logs' && <RewardLogViewer dbData={dbData} />}
                 {activeTab === 'jobs' && <JobManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
                 {activeTab === 'shop' && <ShopManagerTeacher dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
-              {activeTab === 'purchases' && <PurchaseLogManager dbData={dbData} />}
                 {activeTab === 'approvals' && <ApprovalManager dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
               </div>
 
@@ -2235,12 +2233,16 @@
             setDbData(prev => ({ ...prev, Emotions: prev.Emotions.filter(p => p.id !== postToDelete) }));
             syncToServer('Emotions', 'DELETE', postToDelete, null);
             
-            if (post && currentUser.role === 'student' && updateStudentData) {
-              updateStudentData(currentUser.id, { exp: Math.max(0, Number(currentUser.exp || 0) - 10) }, '마음 일기 삭제');
+            if (post && updateStudentData) {
+              const targetStudent = dbData.Users.find(u => u.id === post.studentId);
+              if (targetStudent) {
+                updateStudentData(post.studentId, { exp: Math.max(0, Number(targetStudent.exp || 0) - 10) }, '마음 일기 삭제');
+              }
             }
             
-            showToast('?쇨린媛 ??젣?섏뿀?듬땲?? (寃쏀뿕移?-10)');
+            showToast('일기가 삭제되었습니다. (경험치가 10 줄어듭니다)');
             setPostToDelete(null);
+          };
           };
 
         const handleLike = (postId) => {
