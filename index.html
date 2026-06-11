@@ -97,7 +97,7 @@
         const [showPwdModal, setShowPwdModal] = useState(false);
 
         const [dbData, setDbData] = useState({
-          Users: [], Announcements: [], ShopItems: [], PendingItems: [], Emotions: [], HallOfFame: [], Tasks: [], Jobs: [], PurchaseLogs: [], Records: [], RecordCategories: [], Letters: [], ComplimentTargets: []
+          Users: [], Announcements: [], ShopItems: [], PendingItems: [], Emotions: [], HallOfFame: [], Tasks: [], Jobs: [], PurchaseLogs: [], Records: [], RecordCategories: [], Letters: [], ComplimentTargets: [], RewardLogs: []
         });
 
         const [loginName, setLoginName] = useState('');
@@ -115,7 +115,7 @@
             const res = await fetch(SCRIPT_URL);
             const data = await res.json();
             
-            const requiredSheets = ['Users', 'Announcements', 'ShopItems', 'PendingItems', 'Emotions', 'HallOfFame', 'Tasks', 'Jobs', 'PurchaseLogs', 'Records', 'RecordCategories', 'Letters', 'ComplimentTargets'];
+            const requiredSheets = ['Users', 'Announcements', 'ShopItems', 'PendingItems', 'Emotions', 'HallOfFame', 'Tasks', 'Jobs', 'PurchaseLogs', 'Records', 'RecordCategories', 'Letters', 'ComplimentTargets', 'RewardLogs'];
             const missingSheets = requiredSheets.filter(sheet => !data[sheet]);
             
             if (missingSheets.length > 0) {
@@ -173,7 +173,8 @@
               HallOfFame: Array.isArray(data.HallOfFame) ? data.HallOfFame : [],
               Tasks: parsedTasks,
               Jobs: Array.isArray(data.Jobs) ? data.Jobs : [],
-              PurchaseLogs: Array.isArray(data.PurchaseLogs) ? data.PurchaseLogs : [],
+                            PurchaseLogs: Array.isArray(data.PurchaseLogs) ? data.PurchaseLogs : [],
+              RewardLogs: Array.isArray(data.RewardLogs) ? data.RewardLogs : [],
               Records: Array.isArray(data.Records) ? data.Records : [],
               RecordCategories: Array.isArray(data.RecordCategories) ? data.RecordCategories : [],
               Letters: Array.isArray(data.Letters) ? data.Letters.map(l => ({ ...l, likes: safeParseArray(l.likes) })) : [],
@@ -235,10 +236,33 @@
           }
         };
 
-        const updateStudentData = (studentId, updates) => {
+        const updateStudentData = (studentId, updates, reason = '?쒖뒪??) => {
           const studentToUpdate = dbData.Users.find(u => u.id === studentId);
           if (!studentToUpdate) return;
           
+          let expDelta = 0;
+          let moneyDelta = 0;
+          if (updates.exp !== undefined) expDelta = Number(updates.exp || 0) - Number(studentToUpdate.exp || 0);
+          if (updates.money !== undefined) moneyDelta = Number(updates.money || 0) - Number(studentToUpdate.money || 0);
+
+          if (expDelta !== 0 || moneyDelta !== 0) {
+            const newLog = {
+              id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+              date: new Date().toLocaleString('ko-KR'),
+              studentId: studentId,
+              studentName: studentToUpdate.name,
+              expDelta: expDelta,
+              moneyDelta: moneyDelta,
+              reason: reason
+            };
+            setDbData(prev => ({
+              ...prev,
+              RewardLogs: [newLog, ...(prev.RewardLogs || [])]
+            }));
+            syncToServer('RewardLogs', 'INSERT', null, newLog);
+          }
+
+          const updatedStudent = { ...studentToUpdate, ...updates };
           const updatedStudent = { ...studentToUpdate, ...updates };
           
           if (updates.exp !== undefined) {
@@ -494,7 +518,66 @@
         );
       }
 
-      function TeacherDashboard({ currentUser, dbData, setDbData, updateStudentData, syncToServer, showToast, batchUpdateStudents }) {
+              function RewardLogViewer({ dbData }) {
+          const logs = Array.isArray(dbData.RewardLogs) ? [...dbData.RewardLogs] : [];
+          // Sort by newest first (assuming ID starts with Date.now())
+          logs.sort((a, b) => {
+            const timeA = parseInt(a.id.substring(0, 13));
+            const timeB = parseInt(b.id.substring(0, 13));
+            return timeB - timeA;
+          });
+
+          return (
+            <div className="space-y-6">
+              <div className="bg-gradient-to-r from-purple-100 to-fuchsia-100 p-8 rounded-[2.5rem] shadow-sm text-purple-900 relative overflow-hidden border border-purple-200">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-white/30 rounded-bl-full -z-0"></div>
+                <div className="relative z-10">
+                  <h2 className="text-2xl font-black mb-2 flex items-center gap-2">?뱶 蹂댁긽 湲곕줉</h2>
+                  <p className="text-purple-800 font-bold opacity-90">?숈깮?ㅼ쓽 寃쏀뿕移섏? 寃??? 蹂???댁뿭???뺤씤?⑸땲??</p>
+                </div>
+              </div>
+              
+              <div className="bg-white/90 rounded-[2rem] shadow-sm border border-stone-100 overflow-hidden">
+                {logs.length === 0 ? (
+                  <div className="text-center py-10 text-stone-400 font-bold bg-stone-50">?꾩쭅 湲곕줉???놁뒿?덈떎.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-stone-50 border-b border-stone-100 text-stone-500 text-sm">
+                          <th className="p-4 font-black whitespace-nowrap">?쒓컙</th>
+                          <th className="p-4 font-black whitespace-nowrap">?숈깮</th>
+                          <th className="p-4 font-black whitespace-nowrap">?ъ쑀</th>
+                          <th className="p-4 font-black text-right whitespace-nowrap">EXP 蹂??/th>
+                          <th className="p-4 font-black text-right whitespace-nowrap">寃?蹂??/th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {logs.map((log, idx) => (
+                          <tr key={log.id || idx} className="border-b border-stone-50 hover:bg-stone-50/50 transition">
+                            <td className="p-4 text-sm font-bold text-stone-400 whitespace-nowrap">{log.date}</td>
+                            <td className="p-4 font-black text-stone-700 whitespace-nowrap">{log.studentName}</td>
+                            <td className="p-4 text-sm font-bold text-stone-600 whitespace-nowrap">
+                              <span className="bg-stone-100 px-3 py-1 rounded-full">{log.reason}</span>
+                            </td>
+                            <td className={p-4 text-right font-black whitespace-nowrap }>
+                              {log.expDelta > 0 ? + : log.expDelta < 0 ? log.expDelta : '-'}
+                            </td>
+                            <td className={p-4 text-right font-black whitespace-nowrap }>
+                              {log.moneyDelta > 0 ? + : log.moneyDelta < 0 ? log.moneyDelta : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        function TeacherDashboard({ currentUser, dbData, setDbData, updateStudentData, syncToServer, showToast, batchUpdateStudents }) {
         const [activeTab, setActiveTab] = useState('students');
         const [batchMoney, setBatchMoney] = useState('');
         const [batchExp, setBatchExp] = useState('');
@@ -580,7 +663,8 @@
                 {activeTab === 'emotions' && <EmotionBoard currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} updateStudentData={updateStudentData} />}
                 {activeTab === 'compliment' && <ComplimentManagerTeacher dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
                 {activeTab === 'announcements' && <AnnouncementManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
-                {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+                                {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+                {activeTab === 'logs' && <RewardLogViewer dbData={dbData} />}
                 {activeTab === 'jobs' && <JobManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
                 {activeTab === 'shop' && <ShopManagerTeacher dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
               {activeTab === 'purchases' && <PurchaseLogManager dbData={dbData} />}
@@ -641,7 +725,8 @@
             {activeTab === 'emotions' && <EmotionBoard currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} updateStudentData={updateStudentData} />}
             {activeTab === 'compliment' && <ComplimentShowerStudent currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
             {activeTab === 'shop' && <Shop currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
-            {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+                            {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+                {activeTab === 'logs' && <RewardLogViewer dbData={dbData} />}
             {activeTab === 'announcements' && (
               <div className="space-y-4">
                 <h2 className="font-black text-2xl pl-2 flex items-center gap-2 text-cyan-800">📢 선생님 알림장</h2>
@@ -1237,7 +1322,7 @@
           if (ownedItems.some(id => String(id) === String(item.id))) return showToast('이미 가진 아이템이에요!');
           if (currentUser.money < item.price) return showToast('돈이 부족해요!');
           
-          updateStudentData(currentUser.id, { money: Number(currentUser.money || 0) - item.price, ownedItems: [...ownedItems, item.id] });
+          updateStudentData(currentUser.id, { money: Number(currentUser.money || 0) - item.price, ownedItems: [...ownedItems, item.id] }, '?곸젏 臾쇳뭹 援щℓ');
           
           const newLog = {
             id: Date.now().toString(),
@@ -1376,11 +1461,11 @@
             <div className="space-y-3">
               <div className="flex gap-2">
                 <input type="number" placeholder="경험치 (예:10)" value={expAmount} onChange={e => setExpAmount(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-sky-300 font-bold text-stone-800" />
-                <button onClick={() => { updateStudentData(student.id, { exp: Number(student.exp) + Number(expAmount) }); showToast(`${student.name} EXP 지급!`); setExpAmount(''); }} className="bg-sky-400 hover:bg-sky-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">EXP 지급</button>
+                <button onClick={() => { updateStudentData(student.id, { exp: Number(student.exp) + Number(expAmount) }, '援먯궗 媛쒕퀎 吏湲?); showToast(`${student.name} EXP 지급!`); setExpAmount(''); }} className="bg-sky-400 hover:bg-sky-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">EXP 지급</button>
               </div>
               <div className="flex gap-2">
                 <input type="number" placeholder="용돈 (예:100)" value={moneyAmount} onChange={e => setMoneyAmount(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-amber-300 font-bold text-stone-800" />
-                <button onClick={() => { updateStudentData(student.id, { money: Number(student.money) + Number(moneyAmount) }); showToast(`${student.name} 용돈 지급!`); setMoneyAmount(''); }} className="bg-amber-400 hover:bg-amber-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">용돈 지급</button>
+                <button onClick={() => { updateStudentData(student.id, { money: Number(student.money) + Number(moneyAmount) }, '援먯궗 媛쒕퀎 吏湲?); showToast(`${student.name} 용돈 지급!`); setMoneyAmount(''); }} className="bg-amber-400 hover:bg-amber-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">용돈 지급</button>
               </div>
               <div className="flex gap-2">
                 <input type="text" placeholder="새로운 칭호 하사하기" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-orange-300 font-bold text-stone-800" />
@@ -1609,10 +1694,10 @@
           const moneyVal = parseInt(money, 10) || 0;
           const student = students.find(s => s.id === studentId);
           if (student && (expVal > 0 || moneyVal > 0)) {
-             updateStudentData(studentId, {
-               exp: Number(student.exp || 0) + expVal,
-               money: Number(student.money || 0) + moneyVal
-             });
+              updateStudentData(studentId, {
+                exp: Number(student.exp || 0) + expVal,
+                money: Number(student.money || 0) + moneyVal
+              }, '?????꾨즺 蹂댁긽');
              showToast(`${studentName} 학생 확인 완료! 보상 지급됨.`);
           } else {
              showToast(`${studentName} 학생 확인 완료!`);
@@ -2118,7 +2203,7 @@
           syncToServer('Emotions', 'INSERT', null, newPost);
           
           if (currentUser.role === 'student' && updateStudentData) {
-            updateStudentData(currentUser.id, { exp: Number(currentUser.exp || 0) + 10 });
+            updateStudentData(currentUser.id, { exp: Number(currentUser.exp || 0) + 10 }, '留덉쓬 ?쇨린 ?묒꽦');
           }
 
           setContent(''); setIsSecret(false);
@@ -2134,7 +2219,7 @@
             syncToServer('Emotions', 'DELETE', postToDelete, null);
             
             if (post && currentUser.role === 'student' && updateStudentData) {
-              updateStudentData(currentUser.id, { exp: Math.max(0, Number(currentUser.exp || 0) - 10) });
+              updateStudentData(currentUser.id, { exp: Math.max(0, Number(currentUser.exp || 0) - 10) }, '留덉쓬 ?쇨린 ??젣');
             }
             
             showToast('?쇨린媛 ??젣?섏뿀?듬땲?? (寃쏀뿕移?-10)');
@@ -2769,7 +2854,7 @@
               updateStudentData(letter.senderId, {
                 exp: Number(student.exp || 0) + expReward,
                 money: Number(student.money || 0) + moneyReward
-              });
+              }, '移?갔 ?ㅼ썙 蹂댁긽');
             }
           }
           
