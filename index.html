@@ -2509,11 +2509,6 @@
         const [studentName, setStudentName] = useState('');
         const [description, setDescription] = useState('');
 
-        useEffect(() => {
-          if (!allCategories.includes(activeTab) && allCategories.length > 0) {
-            setActiveTab(allCategories[0]);
-          }
-        }, [allCategories, activeTab]);
 
         const handlePost = (e) => {
           e.preventDefault();
