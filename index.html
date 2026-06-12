@@ -672,7 +672,7 @@
                 {activeTab === 'tasks' && <TaskManagerTeacher currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
                 {activeTab === 'letters' && <PostOfficeTeacher dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
                 {activeTab === 'emotions' && <EmotionBoard currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} updateStudentData={updateStudentData} />}
-                {activeTab === 'compliment' && <ComplimentManagerTeacher dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
+                {activeTab === 'compliment' && <ComplimentManagerTeacher currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
                 {activeTab === 'announcements' && <AnnouncementManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
                                 {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
                 {activeTab === 'jobs' && <JobManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
@@ -2756,7 +2756,7 @@
 
       
       // 칭찬 샤워 교사용 컴포넌트
-      function ComplimentManagerTeacher({ dbData, setDbData, updateStudentData, syncToServer, showToast }) {
+      function ComplimentManagerTeacher({ currentUser, dbData, setDbData, updateStudentData, syncToServer, showToast }) {
         const [showTargetModal, setShowTargetModal] = useState(false);
         const [newTargetIds, setNewTargetIds] = useState([]);
         const [selectedTarget, setSelectedTarget] = useState(null); // { id, name, isPast }
@@ -3220,6 +3220,9 @@
     </script>
   </body>
 </html>
+
+
+
 
 
 
