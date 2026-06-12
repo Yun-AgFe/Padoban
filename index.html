@@ -3155,6 +3155,16 @@
           e.preventDefault();
           if (!content.trim() || !selectedTarget || selectedTarget.isPast) return;
           
+          const today = new Date().toISOString().split('T')[0];
+          const hasWrittenToday = letters.some(l => 
+            l.senderId === currentUser.id && 
+            l.receiverId === selectedTarget.id && 
+            l.date === today &&
+            l.tag === '칭찬'
+          );
+          if (hasWrittenToday) {
+            return showToast('이 친구에게는 오늘 이미 칭찬 샤워를 작성했습니다. 내일 또 작성해 주세요!');
+          }
           const newLetter = {
             id: Date.now().toString(),
             senderId: currentUser.id,
