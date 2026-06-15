@@ -115,7 +115,7 @@
             const res = await fetch(SCRIPT_URL);
             const data = await res.json();
             
-            const requiredSheets = ['Users', 'Announcements', 'ShopItems', 'PendingItems', 'Emotions', 'HallOfFame', 'Tasks', 'Jobs', 'PurchaseLogs', 'Records', 'RecordCategories', 'Letters', 'ComplimentTargets', 'RewardLogs'];
+            const requiredSheets = ['Users', 'Announcements', 'ShopItems', 'PendingItems', 'Emotions', 'HallOfFame', 'Tasks', 'Jobs', 'PurchaseLogs', 'Records', 'RecordCategories', 'Letters', 'ComplimentTargets'];
             const missingSheets = requiredSheets.filter(sheet => !data[sheet]);
             
             if (missingSheets.length > 0) {
@@ -178,7 +178,7 @@
               Records: Array.isArray(data.Records) ? data.Records : [],
               RecordCategories: Array.isArray(data.RecordCategories) ? data.RecordCategories : [],
               Letters: Array.isArray(data.Letters) ? data.Letters.map(l => ({ ...l, likes: safeParseArray(l.likes) })) : [],
-              ComplimentTargets: Array.isArray(data.ComplimentTargets) ? data.ComplimentTargets : []
+              ComplimentTargets: Array.isArray(data.ComplimentTargets) ? data.ComplimentTargets : [], ReadingLogs: Array.isArray(data.ReadingLogs) ? data.ReadingLogs : []
             });
           } catch (error) {
             console.error("Data Fetch Error:", error);
@@ -221,6 +221,12 @@
             localStorage.setItem('padoUser', JSON.stringify(parentUser));
             setLoginError('');
             showToast('학부모님 환영합니다! 🌊');
+            if (user.penaltyAlert) {
+              alert('독서록이 거부되어 경험치과 돈이 깎입니다');
+              const updatedUser = { ...user, penaltyAlert: false };
+              setDbData(prev => ({ ...prev, Users: prev.Users.map(u => u.id === user.id ? updatedUser : u) }));
+              syncToServer('Users', 'UPDATE', user.id, updatedUser);
+            }
             return;
           }
           const users = Array.isArray(dbData.Users) ? dbData.Users : [];
@@ -620,6 +626,7 @@
             { id: 'jobs', label: '직업 관리', icon: '💼' },
             { id: 'shop', label: '상점 아이템', icon: '🏪' },
             { id: 'approvals', label: `아이템 승인 (${dbData.PendingItems?.length || 0})`, icon: '🎁' },
+            ,{ id: 'reading', label: '독서 기록', icon: '📚' }
           ];
 
           return (
@@ -708,10 +715,11 @@
           { id: 'halloffame', label: '명예의 전당', icon: '🏆' },
           { id: 'announcements', label: '알림장', icon: '📢' },
           { id: 'shop', label: '상점', icon: '🛍️' },
+          ,{ id: 'reading', label: '독서 기록', icon: '📚' }
         ];
 
         const navItems = currentUser.role === 'parent' 
-            ? allNavItems.filter(item => ['profile', 'records', 'emotions', 'compliment', 'halloffame', 'shop', 'logs'].includes(item.id))
+            ? allNavItems.filter(item => ['profile', 'records', 'emotions', 'compliment', 'halloffame', 'shop', 'logs', 'reading'].includes(item.id))
           : allNavItems;
 
         return (
@@ -734,6 +742,7 @@
             {activeTab === 'emotions' && <EmotionBoard currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} updateStudentData={updateStudentData} />}
             {activeTab === 'compliment' && <ComplimentShowerStudent currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
             {activeTab === 'shop' && <Shop currentUser={currentUser} dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
+            {activeTab === 'reading' && <ReadingLogsStudent currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
                             {activeTab === 'halloffame' && <HallOfFameManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
             {activeTab === 'announcements' && (
               <div className="space-y-4">
@@ -3359,6 +3368,188 @@
 
             const root = ReactDOM.createRoot(document.getElementById('root'));
       root.render(<App />);
+      // ==========================================
+      // [새 기능] 독서 기록 (학생/학부모용)
+      // ==========================================
+      function ReadingLogsStudent({ currentUser, dbData, setDbData, syncToServer, showToast }) {
+        const [title, setTitle] = useState('');
+        const [author, setAuthor] = useState('');
+        const [summary, setSummary] = useState('');
+        const [thoughts, setThoughts] = useState('');
+        const [rating, setRating] = useState(5);
+
+        const logs = Array.isArray(dbData.ReadingLogs) ? dbData.ReadingLogs : [];
+        const myLogs = currentUser.role === 'parent' 
+            ? logs.filter(l => l.studentId === currentUser.studentId)
+            : logs.filter(l => l.studentId === currentUser.id);
+
+        const handleSubmit = (e) => {
+          e.preventDefault();
+          if (!title || !author || !summary || !thoughts) return showToast('모든 항목을 입력해주세요.');
+
+          const newLog = {
+            id: Date.now().toString(),
+            studentId: currentUser.id,
+            studentName: currentUser.name,
+            title, author, summary, thoughts, rating,
+            status: 'pending',
+            date: new Date().toISOString().split('T')[0]
+          };
+
+          setDbData(prev => ({ ...prev, ReadingLogs: [newLog, ...(prev.ReadingLogs || [])] }));
+          syncToServer('ReadingLogs', 'INSERT', null, newLog);
+          setTitle(''); setAuthor(''); setSummary(''); setThoughts(''); setRating(5);
+          showToast('독서 기록이 제출되었습니다. 선생님의 승인을 기다려주세요!');
+        };
+
+        return (
+          <div className="space-y-6">
+            {currentUser.role === 'student' && (
+              <form onSubmit={handleSubmit} className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-emerald-200 space-y-4">
+                <h3 className="font-black text-xl text-emerald-900 mb-2">📚 새 독서 기록 작성</h3>
+                <div className="flex gap-4">
+                  <input type="text" placeholder="책 제목" value={title} onChange={e=>setTitle(e.target.value)} className="flex-1 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 font-bold focus:ring-2 focus:ring-emerald-300 outline-none text-stone-800" required />
+                  <input type="text" placeholder="지은이" value={author} onChange={e=>setAuthor(e.target.value)} className="w-1/3 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 font-bold focus:ring-2 focus:ring-emerald-300 outline-none text-stone-800" required />
+                </div>
+                <textarea placeholder="내용 요약" value={summary} onChange={e=>setSummary(e.target.value)} rows="2" className="w-full bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 font-bold focus:ring-2 focus:ring-emerald-300 outline-none text-stone-800 resize-none" required />
+                <textarea placeholder="느낀점이나 내 생각" value={thoughts} onChange={e=>setThoughts(e.target.value)} rows="3" className="w-full bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 font-bold focus:ring-2 focus:ring-emerald-300 outline-none text-stone-800 resize-none" required />
+                <div className="flex items-center gap-4 bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                  <span className="font-bold text-emerald-800">별점:</span>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map(star => (
+                      <button type="button" key={star} onClick={() => setRating(star)} className={`text-2xl transition-transform ${rating >= star ? 'text-amber-400 scale-110' : 'text-stone-300 grayscale'}`}>⭐</button>
+                    ))}
+                  </div>
+                </div>
+                <button type="submit" className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-4 rounded-xl shadow-md transition">제출하기</button>
+              </form>
+            )}
+
+            <div className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-stone-200">
+              <h3 className="font-black text-xl text-stone-800 mb-6">{currentUser.role === 'parent' ? '자녀의 독서 기록' : '내 독서 기록 내역'}</h3>
+              <div className="space-y-4">
+                {myLogs.length === 0 ? (
+                  <div className="text-center py-10 text-stone-400 font-bold bg-stone-50 rounded-2xl">작성한 기록이 없습니다.</div>
+                ) : (
+                  myLogs.map(log => (
+                    <div key={log.id} className="bg-stone-50 p-5 rounded-2xl border border-stone-200">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <h4 className="font-black text-lg text-stone-800">{log.title} <span className="text-sm font-bold text-stone-500">({log.author})</span></h4>
+                          <div className="text-sm text-stone-400">{log.date}</div>
+                        </div>
+                        <div className={`px-3 py-1 rounded-full text-xs font-bold ${log.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : log.status === 'rejected' ? 'bg-rose-100 text-rose-700' : 'bg-stone-200 text-stone-600'}`}>
+                          {log.status === 'approved' ? '승인됨' : log.status === 'rejected' ? '반려됨' : '대기중'}
+                        </div>
+                      </div>
+                      <div className="flex mb-3">{'⭐'.repeat(log.rating)}{'🌑'.repeat(5-log.rating)}</div>
+                      <p className="text-sm font-bold text-stone-600 mb-2"><span className="text-stone-400">요약:</span> {log.summary}</p>
+                      <p className="text-sm font-bold text-stone-800"><span className="text-stone-400">느낀점:</span> {log.thoughts}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // ==========================================
+      // [새 기능] 독서 기록 (선생님용)
+      // ==========================================
+      function ReadingLogsTeacher({ dbData, setDbData, updateStudentData, syncToServer, showToast }) {
+        const [activeTab, setActiveTab] = useState('pending');
+        const logs = Array.isArray(dbData.ReadingLogs) ? dbData.ReadingLogs : [];
+        const pendingLogs = logs.filter(l => l.status === 'pending');
+        const pastLogs = logs.filter(l => l.status !== 'pending');
+
+        const applyPenalty = (studentId) => {
+          const student = dbData.Users.find(u => u.id === studentId);
+          if (!student) return;
+          const newExp = Number(student.exp || 0) - 20;
+          const newMoney = Number(student.money || 0) - 10;
+          updateStudentData(studentId, { exp: newExp, money: newMoney, penaltyAlert: true }, '독서록 비승인/삭제');
+        };
+
+        const handleApprove = (log) => {
+          const student = dbData.Users.find(u => u.id === log.studentId);
+          if (student) {
+            updateStudentData(log.studentId, { exp: Number(student.exp || 0) + 20, money: Number(student.money || 0) + 10 }, '독서록 승인');
+          }
+          const updatedLog = { ...log, status: 'approved' };
+          setDbData(prev => ({ ...prev, ReadingLogs: prev.ReadingLogs.map(l => l.id === log.id ? updatedLog : l) }));
+          syncToServer('ReadingLogs', 'UPDATE', log.id, updatedLog);
+          showToast('승인되었습니다. (+20 EXP, +10 결)');
+        };
+
+        const handleReject = (log) => {
+          applyPenalty(log.studentId);
+          const updatedLog = { ...log, status: 'rejected' };
+          setDbData(prev => ({ ...prev, ReadingLogs: prev.ReadingLogs.map(l => l.id === log.id ? updatedLog : l) }));
+          syncToServer('ReadingLogs', 'UPDATE', log.id, updatedLog);
+          showToast('비승인 처리되었습니다. (학생 경험치/돈 차감)');
+        };
+
+        const handleDelete = (log) => {
+          if (!window.confirm('정말 삭제하시겠습니까? (삭제 시 페널티 적용)')) return;
+          applyPenalty(log.studentId);
+          setDbData(prev => ({ ...prev, ReadingLogs: prev.ReadingLogs.filter(l => l.id !== log.id) }));
+          syncToServer('ReadingLogs', 'DELETE', log.id, null);
+          showToast('삭제되었습니다. (학생 경험치/돈 차감)');
+        };
+
+        return (
+          <div className="space-y-6">
+            <div className="flex gap-2">
+              <button onClick={() => setActiveTab('pending')} className={`flex-1 py-3 rounded-xl font-bold transition ${activeTab === 'pending' ? 'bg-emerald-500 text-white shadow-md' : 'bg-white text-stone-500 hover:bg-emerald-50'}`}>승인 대기 ({pendingLogs.length})</button>
+              <button onClick={() => setActiveTab('past')} className={`flex-1 py-3 rounded-xl font-bold transition ${activeTab === 'past' ? 'bg-emerald-500 text-white shadow-md' : 'bg-white text-stone-500 hover:bg-emerald-50'}`}>처리 완료 ({pastLogs.length})</button>
+            </div>
+
+            <div className="space-y-4">
+              {(activeTab === 'pending' ? pendingLogs : pastLogs).map(log => (
+                <div key={log.id} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-emerald-100">
+                  <div className="flex justify-between items-start mb-4 border-b border-emerald-50 pb-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="bg-emerald-100 text-emerald-800 text-xs font-black px-2 py-1 rounded-lg">{log.studentName}</span>
+                        <span className="text-stone-400 text-sm">{log.date}</span>
+                        {log.status !== 'pending' && (
+                          <span className={`text-xs font-black px-2 py-1 rounded-lg ${log.status === 'approved' ? 'bg-blue-100 text-blue-700' : 'bg-rose-100 text-rose-700'}`}>
+                            {log.status === 'approved' ? '승인됨' : '반려됨'}
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="font-black text-xl text-stone-800">{log.title} <span className="text-base text-stone-500">({log.author})</span></h4>
+                      <div className="text-amber-400 tracking-widest mt-1">{'★'.repeat(log.rating)}{'☆'.repeat(5-log.rating)}</div>
+                    </div>
+                    {activeTab === 'pending' ? (
+                      <div className="flex gap-2">
+                        <button onClick={() => handleApprove(log)} className="bg-emerald-100 hover:bg-emerald-200 text-emerald-700 font-bold px-4 py-2 rounded-xl transition">승인</button>
+                        <button onClick={() => handleReject(log)} className="bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold px-4 py-2 rounded-xl transition">비승인</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => handleDelete(log)} className="bg-rose-50 hover:bg-rose-100 text-rose-500 font-bold px-4 py-2 rounded-xl transition">삭제</button>
+                    )}
+                  </div>
+                  <div className="space-y-3">
+                    <div className="bg-stone-50 p-4 rounded-xl">
+                      <div className="text-xs font-black text-stone-400 mb-1">내용 요약</div>
+                      <p className="text-stone-700 font-bold">{log.summary}</p>
+                    </div>
+                    <div className="bg-emerald-50 p-4 rounded-xl">
+                      <div className="text-xs font-black text-emerald-600 mb-1">느낀점이나 생각</div>
+                      <p className="text-stone-800 font-bold">{log.thoughts}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {(activeTab === 'pending' ? pendingLogs : pastLogs).length === 0 && (
+                <div className="text-center py-10 text-stone-400 font-bold bg-white/50 rounded-[2rem]">해당하는 기록이 없습니다.</div>
+              )}
+            </div>
+          </div>
+        );
+      }
     </script>
   </body>
 </html>
