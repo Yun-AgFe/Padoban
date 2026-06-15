@@ -685,6 +685,7 @@
                 {activeTab === 'jobs' && <JobManager currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
                 {activeTab === 'shop' && <ShopManagerTeacher dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
                 {activeTab === 'approvals' && <ApprovalManager dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
+                {activeTab === 'reading' && <ReadingLogsTeacher dbData={dbData} setDbData={setDbData} updateStudentData={updateStudentData} syncToServer={syncToServer} showToast={showToast} />}
               </div>
 
               {selectedStudentProfile && <StudentProfileModal student={selectedStudentProfile} shopItems={dbData.ShopItems} jobs={dbData.Jobs} onClose={() => setSelectedStudentProfile(null)} />}
