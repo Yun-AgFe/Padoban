@@ -2541,6 +2541,9 @@
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3);
           
+        const students = Array.isArray(dbData.Users) ? dbData.Users.filter(u => u.role === 'student') : [];
+        const topExpStudents = [...students].sort((a, b) => (Number(b.exp) || 0) - (Number(a.exp) || 0)).slice(0, 3);
+          
         const getBadgeImage = (count) => {
           if (count >= 10) return 'https://i.postimg.cc/7Y7f3zn3/9-chaellinjeo-removebg-preview.png';
           if (count === 9) return 'https://i.postimg.cc/W31kSKfV/8-geulaendeumaseuteo-removebg-preview.png';
@@ -2562,33 +2565,73 @@
               <p className="font-bold opacity-90 relative z-10">파도반을 빛낸 멋진 친구들을 기념하는 곳입니다!</p>
             </div>
 
-            {topStudents.length > 0 && (
-              <div className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-amber-200">
-                <h3 className="text-xl font-black text-amber-900 mb-6 text-center">🏆 명예의 전당 TOP 3 🏆</h3>
-                <div className="flex flex-row justify-center items-end gap-4 md:gap-8 min-h-[160px]">
-                  {topStudents[1] && (
-                    <div className="flex flex-col items-center">
-                      <div className="text-4xl mb-2">🥈</div>
-                      <div className="font-black text-lg text-stone-800">{topStudents[1][0]}</div>
-                      <div className="text-sm font-bold text-amber-600">{topStudents[1][1]}회</div>
-                      <div className="w-16 md:w-24 h-24 bg-stone-200 rounded-t-xl mt-2 border-t-4 border-stone-300"></div>
+            {(topStudents.length > 0 || topExpStudents.length > 0) && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-amber-200">
+                  <h3 className="text-xl font-black text-amber-900 mb-6 text-center">🏆 명예의 전당 TOP 3 🏆</h3>
+                  {topStudents.length > 0 ? (
+                    <div className="flex flex-row justify-center items-end gap-4 md:gap-8 min-h-[160px]">
+                      {topStudents[1] && (
+                        <div className="flex flex-col items-center">
+                          <div className="text-4xl mb-2">🥈</div>
+                          <div className="font-black text-lg text-stone-800">{topStudents[1][0]}</div>
+                          <div className="text-sm font-bold text-amber-600">{topStudents[1][1]}회</div>
+                          <div className="w-16 md:w-24 h-24 bg-stone-200 rounded-t-xl mt-2 border-t-4 border-stone-300"></div>
+                        </div>
+                      )}
+                      {topStudents[0] && (
+                        <div className="flex flex-col items-center">
+                          <div className="text-5xl mb-2">🥇</div>
+                          <div className="font-black text-xl text-stone-900">{topStudents[0][0]}</div>
+                          <div className="text-md font-bold text-amber-600">{topStudents[0][1]}회</div>
+                          <div className="w-20 md:w-28 h-32 bg-amber-300 rounded-t-xl mt-2 border-t-4 border-amber-400"></div>
+                        </div>
+                      )}
+                      {topStudents[2] && (
+                        <div className="flex flex-col items-center">
+                          <div className="text-3xl mb-2">🥉</div>
+                          <div className="font-black text-md text-stone-800">{topStudents[2][0]}</div>
+                          <div className="text-sm font-bold text-amber-600">{topStudents[2][1]}회</div>
+                          <div className="w-16 md:w-24 h-16 bg-amber-700/30 rounded-t-xl mt-2 border-t-4 border-amber-800/30"></div>
+                        </div>
+                      )}
                     </div>
+                  ) : (
+                    <div className="text-center py-10 text-stone-400 font-bold">기록이 없습니다.</div>
                   )}
-                  {topStudents[0] && (
-                    <div className="flex flex-col items-center">
-                      <div className="text-5xl mb-2">🥇</div>
-                      <div className="font-black text-xl text-stone-900">{topStudents[0][0]}</div>
-                      <div className="text-md font-bold text-amber-600">{topStudents[0][1]}회</div>
-                      <div className="w-20 md:w-28 h-32 bg-amber-300 rounded-t-xl mt-2 border-t-4 border-amber-400"></div>
+                </div>
+                
+                <div className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-cyan-200">
+                  <h3 className="text-xl font-black text-cyan-900 mb-6 text-center">⭐ 누적 경험치 TOP 3 ⭐</h3>
+                  {topExpStudents.length > 0 ? (
+                    <div className="flex flex-row justify-center items-end gap-4 md:gap-8 min-h-[160px]">
+                      {topExpStudents[1] && (
+                        <div className="flex flex-col items-center">
+                          <div className="text-4xl mb-2">🥈</div>
+                          <div className="font-black text-lg text-stone-800">{topExpStudents[1].name}</div>
+                          <div className="text-sm font-bold text-cyan-600">{topExpStudents[1].exp || 0} EXP</div>
+                          <div className="w-16 md:w-24 h-24 bg-stone-200 rounded-t-xl mt-2 border-t-4 border-stone-300"></div>
+                        </div>
+                      )}
+                      {topExpStudents[0] && (
+                        <div className="flex flex-col items-center">
+                          <div className="text-5xl mb-2">🥇</div>
+                          <div className="font-black text-xl text-stone-900">{topExpStudents[0].name}</div>
+                          <div className="text-md font-bold text-cyan-600">{topExpStudents[0].exp || 0} EXP</div>
+                          <div className="w-20 md:w-28 h-32 bg-cyan-300 rounded-t-xl mt-2 border-t-4 border-cyan-400"></div>
+                        </div>
+                      )}
+                      {topExpStudents[2] && (
+                        <div className="flex flex-col items-center">
+                          <div className="text-3xl mb-2">🥉</div>
+                          <div className="font-black text-md text-stone-800">{topExpStudents[2].name}</div>
+                          <div className="text-sm font-bold text-cyan-600">{topExpStudents[2].exp || 0} EXP</div>
+                          <div className="w-16 md:w-24 h-16 bg-amber-700/30 rounded-t-xl mt-2 border-t-4 border-amber-800/30"></div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  {topStudents[2] && (
-                    <div className="flex flex-col items-center">
-                      <div className="text-3xl mb-2">🥉</div>
-                      <div className="font-black text-md text-stone-800">{topStudents[2][0]}</div>
-                      <div className="text-sm font-bold text-amber-600">{topStudents[2][1]}회</div>
-                      <div className="w-16 md:w-24 h-16 bg-amber-700/30 rounded-t-xl mt-2 border-t-4 border-amber-800/30"></div>
-                    </div>
+                  ) : (
+                    <div className="text-center py-10 text-stone-400 font-bold">기록이 없습니다.</div>
                   )}
                 </div>
               </div>
