@@ -138,8 +138,21 @@
               return [];
             };
 
+            const safeParseTitleArray = (val) => {
+              if (!val) return [];
+              if (Array.isArray(val)) return val;
+              if (typeof val === 'string') {
+                if (val.startsWith('[') && val.endsWith(']')) {
+                  try { return JSON.parse(val); } catch(e) { return [val]; }
+                }
+                return [val];
+              }
+              return [];
+            };
+
             const parsedUsers = (Array.isArray(data.Users) ? data.Users : []).map(u => ({
               ...u,
+              title: safeParseTitleArray(u.title),
               role: u.name === '윤은철' ? 'teacher' : 'student',
               ownedItems: safeParseArray(u.ownedItems),
               equippedItems: safeParseArray(u.equippedItems),
@@ -1478,7 +1491,11 @@
                   <div className="flex items-center gap-2 mb-1">
                     <button onClick={onOpenProfile} className="font-black text-xl text-stone-800 hover:text-orange-500 transition-colors">{safeText(student.name)}</button>
                   </div>
-                  <div className="text-xs font-bold text-orange-700 bg-orange-100 px-3 py-1 rounded-full inline-block">{safeText(student.title) || '새싹 파도'}</div>
+                  <div className="flex gap-1 flex-wrap">
+                    {Array.isArray(student.title) && student.title.length > 0 ? student.title.map((t, idx) => (
+                      <span key={idx} className="text-[10px] font-bold text-orange-700 bg-orange-100 px-2 py-0.5 rounded-full inline-block">✨ {safeText(t)}</span>
+                    )) : <span className="text-[10px] font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full inline-block">칭호 없음</span>}
+                  </div>
                 </div>
               </div>
               <div className="text-right">
@@ -2030,8 +2047,16 @@
         };
 
         const selectTitle = (title) => {
-          updateStudentData(currentUser.id, { title: title });
-          if(showToast) showToast(`'${title}'(으)로 칭호 변경!`);
+          let currentTitles = Array.isArray(currentUser.title) ? currentUser.title : (currentUser.title ? [currentUser.title] : []);
+          if (currentTitles.includes(title)) {
+            currentTitles = currentTitles.filter(t => t !== title);
+            if(showToast) showToast(`'${title}' 칭호를 장착 해제했습니다.`);
+          } else {
+            if (currentTitles.length >= 3) return showToast('칭호는 최대 3개까지만 장착할 수 있습니다.');
+            currentTitles = [...currentTitles, title];
+            if(showToast) showToast(`'${title}' 칭호 장착 완료! ✨`);
+          }
+          updateStudentData(currentUser.id, { title: currentTitles });
         };
 
         const saveIntro = () => {
@@ -2066,7 +2091,9 @@
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <div className="flex gap-2 mb-2 flex-wrap">
-                      {currentUser.title && <span className="bg-orange-100 text-orange-900 text-sm font-black px-4 py-1.5 rounded-full inline-block shadow-sm border border-orange-200">✨ {safeText(currentUser.title)}</span>}
+                      {Array.isArray(currentUser.title) && currentUser.title.map((t, idx) => (
+                        <span key={idx} className="bg-orange-100 text-orange-900 text-sm font-black px-4 py-1.5 rounded-full inline-block shadow-sm border border-orange-200 mr-2 mb-2">✨ {safeText(t)}</span>
+                      ))}
                       {currentJob && <span className="bg-indigo-100 text-indigo-900 text-sm font-black px-4 py-1.5 rounded-full inline-block shadow-sm border border-indigo-200">💼 {safeText(currentJob.name)} (월 {currentJob.salary}결)</span>}
                     </div>
                     <h2 className="text-3xl font-black text-stone-800 mt-1">{safeText(currentUser.name)}</h2>
@@ -2127,7 +2154,7 @@
               ) : (
                 <div className="flex flex-wrap gap-3">
                   {ownedTitles.map((t, idx) => {
-                    const isEquipped = currentUser.title === t;
+                    const isEquipped = Array.isArray(currentUser.title) && currentUser.title.includes(t);
                     return (
                       <button 
                         key={idx} onClick={() => selectTitle(t)} 
@@ -2504,7 +2531,9 @@
                 
                 <div className="text-center">
                   <div className="flex gap-2 mb-2 justify-center flex-wrap">
-                    {student.title && <span className="bg-orange-100 text-orange-900 text-xs font-black px-4 py-1.5 rounded-full inline-block shadow-sm border border-orange-200">✨ {safeText(student.title)}</span>}
+                    {Array.isArray(student.title) && student.title.map((t, idx) => (
+                      <span key={idx} className="bg-orange-100 text-orange-900 text-xs font-black px-4 py-1.5 rounded-full inline-block shadow-sm border border-orange-200 mr-1 mb-1">✨ {safeText(t)}</span>
+                    ))}
                     {currentJob && <span className="bg-indigo-100 text-indigo-900 text-xs font-black px-4 py-1.5 rounded-full inline-block shadow-sm border border-indigo-200">💼 {safeText(currentJob.name)}</span>}
                   </div>
                   <div className="text-3xl font-black text-stone-800">{safeText(student.name)}</div>
