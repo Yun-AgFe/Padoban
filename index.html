@@ -612,8 +612,8 @@
           batchUpdateStudents(studentIds, type, val, batchReason || '교사 일괄 지급');
 
           if (type === 'money') setBatchMoney('');
-          setBatchReason('');
           else setBatchExp('');
+          setBatchReason('');
         };
 
         const readingLogs = Array.isArray(dbData.ReadingLogs) ? dbData.ReadingLogs : [];
