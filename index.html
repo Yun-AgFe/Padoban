@@ -553,8 +553,8 @@
       function RewardLogViewer({ dbData }) {
         const logs = Array.isArray(dbData.RewardLogs) ? [...dbData.RewardLogs] : [];
         logs.sort((a, b) => {
-          const timeA = parseInt(a.id.substring(0, 13));
-          const timeB = parseInt(b.id.substring(0, 13));
+          const timeA = parseInt(String(a.id).substring(0, 13)) || 0;
+          const timeB = parseInt(String(b.id).substring(0, 13)) || 0;
           return timeB - timeA;
         });
 
@@ -2205,19 +2205,19 @@
 
             <div className="bg-white/90 p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-emerald-100 mt-6">
               <h3 className="font-black text-xl mb-5 text-emerald-800 flex items-center gap-2">💰 경험치/돈 내역</h3>
-              {Array.isArray(rewardLogs) && rewardLogs.filter(l => l.studentId === currentUser.id).length === 0 ? (
+              {Array.isArray(rewardLogs) && rewardLogs.filter(l => String(l.studentId) === String(currentUser.id)).length === 0 ? (
                 <div className="text-center py-8 bg-emerald-50/50 rounded-3xl text-emerald-400 font-bold">아직 내역이 없습니다.</div>
               ) : (
                 <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-2">
-                  {(Array.isArray(rewardLogs) ? [...rewardLogs].filter(l => l.studentId === currentUser.id).sort((a,b) => parseInt(b.id.substring(0,13)) - parseInt(a.id.substring(0,13))) : []).map(log => (
-                    <div key={log.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100">
+                  {(Array.isArray(rewardLogs) ? [...rewardLogs].filter(l => String(l.studentId) === String(currentUser.id)).sort((a,b) => (parseInt(String(b.id).substring(0,13))||0) - (parseInt(String(a.id).substring(0,13))||0)) : []).map((log, i) => (
+                    <div key={log.id || i} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100">
                       <div>
                         <span className="font-bold text-stone-800 mr-2">{log.reason || "보상 지급"}</span>
                         <span className="text-xs text-stone-400 font-bold">{log.date}</span>
                       </div>
                       <div className="flex gap-3 mt-2 sm:mt-0">
-                        {log.expDelta !== 0 && <span className={`font-black ${log.expDelta > 0 ? "text-blue-500" : "text-rose-500"}`}>{log.expDelta > 0 ? "+" : ""}{log.expDelta} EXP</span>}
-                        {log.moneyDelta !== 0 && <span className={`font-black ${log.moneyDelta > 0 ? "text-amber-500" : "text-rose-500"}`}>{log.moneyDelta > 0 ? "+" : ""}{log.moneyDelta} 결</span>}
+                        {Number(log.expDelta) !== 0 && <span className={`font-black ${Number(log.expDelta) > 0 ? "text-blue-500" : "text-rose-500"}`}>{Number(log.expDelta) > 0 ? "+" : ""}{Number(log.expDelta)} EXP</span>}
+                        {Number(log.moneyDelta) !== 0 && <span className={`font-black ${Number(log.moneyDelta) > 0 ? "text-amber-500" : "text-rose-500"}`}>{Number(log.moneyDelta) > 0 ? "+" : ""}{Number(log.moneyDelta)} 결</span>}
                       </div>
                     </div>
                   ))}
