@@ -2209,20 +2209,33 @@
               {ownedItems.length === 0 ? (
                 <div className="text-center py-10 bg-pink-50/50 rounded-3xl text-pink-400 font-bold">상점에서 예쁜 아이템을 모아보세요!</div>
               ) : (
-                <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-4">
-                  {ownedItems.map((itemId, idx) => {
-                    const item = safeShopItems.find(i => String(i.id) === String(itemId));
-                    if(!item) return null;
-                    const isEquipped = equippedItems.some(id => String(id) === String(itemId));
+                <div className="space-y-6">
+                  {['icon', 'background', 'other'].map(type => {
+                    const filteredItems = ownedItems.filter(itemId => (safeShopItems.find(i => String(i.id) === String(itemId))?.type || 'icon') === type);
+                    const typeName = type === 'icon' ? '아이콘' : (type === 'background' ? '배경' : '기타');
+                    const borderColor = type === 'icon' ? 'border-orange-400' : (type === 'background' ? 'border-sky-400' : 'border-stone-400');
+                    if (filteredItems.length === 0) return null;
                     return (
-                      <button key={itemId || idx} onClick={() => toggleEquip(itemId)} className={`flex flex-col items-center p-4 rounded-3xl border-2 transition-all ${isEquipped ? 'border-pink-300 bg-pink-50 shadow-md' : 'border-white bg-stone-50 hover:border-pink-200'}`}>
-                        <div className="w-16 h-16 mb-3 flex items-center justify-center bg-white rounded-2xl shadow-sm border border-stone-100">
-                          {isImageUrl(item.icon) ? <img src={item.icon} alt={item.name} className="w-full h-full object-contain p-2" /> : <span className="text-4xl">{safeText(item.icon)}</span>}
+                      <div key={type}>
+                        <h4 className={`font-black text-lg text-stone-600 mb-3 ml-2 border-l-4 ${borderColor} pl-2`}>{typeName}</h4>
+                        <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-4">
+                          {filteredItems.map((itemId, idx) => {
+                            const item = safeShopItems.find(i => String(i.id) === String(itemId));
+                            if(!item) return null;
+                            const isEquipped = equippedItems.some(id => String(id) === String(itemId));
+                            return (
+                              <button key={itemId || idx} onClick={() => toggleEquip(itemId)} className={`flex flex-col items-center p-4 rounded-3xl border-2 transition-all ${isEquipped ? 'border-pink-300 bg-pink-50 shadow-md' : 'border-white bg-stone-50 hover:border-pink-200'}`}>
+                                <div className="w-16 h-16 mb-3 flex items-center justify-center bg-white rounded-2xl shadow-sm border border-stone-100">
+                                  {isImageUrl(item.icon) ? <img src={item.icon} alt={item.name} className="w-full h-full object-contain p-2" /> : <span className="text-4xl">{safeText(item.icon)}</span>}
+                                </div>
+                                <span className="text-xs font-black text-stone-700 text-center break-keep">{safeText(item.name)}</span>
+                                {isEquipped && <span className="text-[10px] bg-pink-400 text-white px-3 py-1 rounded-full mt-2 font-bold shadow-sm">장착중</span>}
+                              </button>
+                            )
+                          })}
                         </div>
-                        <span className="text-xs font-black text-stone-700 text-center break-keep">{safeText(item.name)}</span>
-                        {isEquipped && <span className="text-[10px] bg-pink-400 text-white px-3 py-1 rounded-full mt-2 font-bold shadow-sm">장착중</span>}
-                      </button>
-                    )
+                      </div>
+                    );
                   })}
                 </div>
               )}
