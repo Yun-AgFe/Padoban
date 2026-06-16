@@ -304,7 +304,7 @@
           syncToServer('Users', 'UPDATE', studentId, dataToSync);
         };
 
-        const batchUpdateStudents = async (studentIds, type, val) => {
+        const batchUpdateStudents = async (studentIds, type, val, reason = '교사 일괄 지급') => {
           setSyncing(true);
           let newUsers = [...dbData.Users];
           const updatePayloads = [];
@@ -324,7 +324,7 @@
                   studentName: student.name,
                   expDelta: type === 'exp' ? valNum : 0,
                   moneyDelta: type === 'money' ? valNum : 0,
-                  reason: '교사 일괄 지급'
+                  reason: reason
                 });
               }
               
@@ -599,6 +599,7 @@
         const [activeTab, setActiveTab] = useState('students');
         const [batchMoney, setBatchMoney] = useState('');
         const [batchExp, setBatchExp] = useState('');
+        const [batchReason, setBatchReason] = useState('');
         const [selectedStudentProfile, setSelectedStudentProfile] = useState(null);
 
         const students = dbData.Users.filter(u => u.role === 'student');
@@ -608,9 +609,10 @@
           if (!val || val <= 0) return showToast('올바른 값을 입력하세요.');
 
           const studentIds = students.map(s => s.id);
-          batchUpdateStudents(studentIds, type, val);
+          batchUpdateStudents(studentIds, type, val, batchReason || '교사 일괄 지급');
 
           if (type === 'money') setBatchMoney('');
+          setBatchReason('');
           else setBatchExp('');
         };
 
@@ -661,6 +663,7 @@
                         <p className="text-orange-800 mt-1 font-bold">우리 반 모두에게 용돈과 경험치를 주세요!</p>
                       </div>
                       <div className="flex flex-col gap-3 w-full xl:w-auto">
+                        <input type="text" placeholder="일괄 지급/차감 사유 (예: 과제 우수)" value={batchReason} onChange={e => setBatchReason(e.target.value)} className="w-full bg-white/95 border-none rounded-xl px-4 py-3 font-bold focus:ring-2 focus:ring-orange-400 text-stone-800 shadow-inner" />
                         <div className="flex gap-2">
                           <input type="number" placeholder="용돈 입력" value={batchMoney} onChange={e => setBatchMoney(e.target.value)} className="w-full xl:w-32 bg-white/95 border-none rounded-xl px-4 py-3 font-bold focus:ring-2 focus:ring-orange-400 text-stone-800 shadow-inner" />
                           <button onClick={() => handleBatchReward('money')} className="bg-amber-400 hover:bg-amber-500 text-white font-black px-5 py-3 rounded-xl whitespace-nowrap shadow-md transition">💰 일괄 지급</button>
@@ -739,7 +742,7 @@
               ))}
             </div>
 
-            {activeTab === 'profile' && <StudentProfile currentUser={currentUser} shopItems={dbData.ShopItems} jobs={dbData.Jobs} updateStudentData={updateStudentData} showToast={showToast} allStudents={Array.isArray(dbData.Users) ? dbData.Users : []} />}
+            {activeTab === 'profile' && <StudentProfile currentUser={currentUser} shopItems={dbData.ShopItems} jobs={dbData.Jobs} updateStudentData={updateStudentData} showToast={showToast} allStudents={Array.isArray(dbData.Users) ? dbData.Users : []} rewardLogs={dbData.RewardLogs} />}
             {activeTab === 'records' && <StudentRecords currentUser={currentUser} dbData={dbData} />}
             {activeTab === 'tasks' && <TaskManagerStudent currentUser={currentUser} dbData={dbData} setDbData={setDbData} syncToServer={syncToServer} showToast={showToast} />}
             {/* 💡 편지함 학생 컴포넌트 연결 */}
@@ -1428,6 +1431,7 @@
       }
 
       function StudentManagerCard({ student, updateStudentData, showToast, shopItems, onOpenProfile }) {
+        const [reason, setReason] = useState('');
         const [expAmount, setExpAmount] = useState('');
         const [moneyAmount, setMoneyAmount] = useState('');
         const [newTitle, setNewTitle] = useState('');
@@ -1484,6 +1488,7 @@
             </div>
 
             <div className="space-y-3">
+               <input type="text" placeholder="지급/차감 사유 (예: 발표 우수)" value={reason} onChange={e => setReason(e.target.value)} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-stone-300 font-bold text-stone-800 mb-2" />
               <div className="flex gap-2">
                 <input type="number" placeholder="경험치 (예:10)" value={expAmount} onChange={e => setExpAmount(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-sky-300 font-bold text-stone-800" />
                 <button onClick={() => { updateStudentData(student.id, { exp: Number(student.exp) + Number(expAmount) }, '교사 개별 지급'); showToast(`${student.name} EXP 지급!`); setExpAmount(''); }} className="bg-sky-400 hover:bg-sky-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">EXP 지급</button>
@@ -1997,7 +2002,7 @@
       }
 
 
-      function StudentProfile({ currentUser, shopItems, jobs, updateStudentData, showToast, allStudents = [] }) {
+      function StudentProfile({ currentUser, shopItems, jobs, updateStudentData, showToast, allStudents = [], rewardLogs = [] }) {
         const currentExp = currentUser.exp % EXP_PER_LEVEL;
         const expPercent = (currentExp / EXP_PER_LEVEL) * 100;
 
@@ -2169,6 +2174,28 @@
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div className="bg-white/90 p-6 md:p-8 rounded-[2.5rem] shadow-sm border border-emerald-100 mt-6">
+              <h3 className="font-black text-xl mb-5 text-emerald-800 flex items-center gap-2">💰 경험치/돈 내역</h3>
+              {Array.isArray(rewardLogs) && rewardLogs.filter(l => l.studentId === currentUser.id).length === 0 ? (
+                <div className="text-center py-8 bg-emerald-50/50 rounded-3xl text-emerald-400 font-bold">아직 내역이 없습니다.</div>
+              ) : (
+                <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                  {(Array.isArray(rewardLogs) ? [...rewardLogs].filter(l => l.studentId === currentUser.id).sort((a,b) => parseInt(b.id.substring(0,13)) - parseInt(a.id.substring(0,13))) : []).map(log => (
+                    <div key={log.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100">
+                      <div>
+                        <span className="font-bold text-stone-800 mr-2">{log.reason || "보상 지급"}</span>
+                        <span className="text-xs text-stone-400 font-bold">{log.date}</span>
+                      </div>
+                      <div className="flex gap-3 mt-2 sm:mt-0">
+                        {log.expDelta !== 0 && <span className={`font-black ${log.expDelta > 0 ? "text-blue-500" : "text-rose-500"}`}>{log.expDelta > 0 ? "+" : ""}{log.expDelta} EXP</span>}
+                        {log.moneyDelta !== 0 && <span className={`font-black ${log.moneyDelta > 0 ? "text-amber-500" : "text-rose-500"}`}>{log.moneyDelta > 0 ? "+" : ""}{log.moneyDelta} 결</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {selectedStudentProfile && (
