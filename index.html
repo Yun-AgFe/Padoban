@@ -51,7 +51,7 @@
         if (!student) return null;
         const equippedItems = Array.isArray(student.equippedItems) ? student.equippedItems : [];
         const safeShopItems = Array.isArray(shopItems) ? shopItems : [];
-        const equippedIcons = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon).filter(Boolean);
+        const equippedIcons = (equippedItems.length > 0 ? [equippedItems[0]] : []).map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon).filter(Boolean);
         
         return (
           <div className={`relative ${sizeClass} bg-orange-50 rounded-full flex items-center justify-center ${borderClass} ${shadowClass} shrink-0 overflow-hidden ${onClick ? 'cursor-pointer hover:border-orange-300 transition-colors' : ''}`} onClick={onClick}>
@@ -178,7 +178,7 @@
               Records: Array.isArray(data.Records) ? data.Records : [],
               RecordCategories: Array.isArray(data.RecordCategories) ? data.RecordCategories : [],
               Letters: Array.isArray(data.Letters) ? data.Letters.map(l => ({ ...l, likes: safeParseArray(l.likes) })) : [],
-              ComplimentTargets: Array.isArray(data.ComplimentTargets) ? data.ComplimentTargets : [], ReadingLogs: Array.isArray(data.ReadingLogs) ? data.ReadingLogs : []
+              ComplimentTargets: Array.isArray(data.ComplimentTargets) ? data.ComplimentTargets : [], ReadingLogs: Array.isArray(data.ReadingLogs) ? data.ReadingLogs.map(l => ({ ...l, likes: safeParseArray(l.likes), comments: safeParseArray(l.comments) })) : []
             });
           } catch (error) {
             console.error("Data Fetch Error:", error);
@@ -614,6 +614,10 @@
           else setBatchExp('');
         };
 
+        const readingLogs = Array.isArray(dbData.ReadingLogs) ? dbData.ReadingLogs : [];
+        const pendingLogsCount = readingLogs.filter(l => l.status === 'pending').length;
+        const pendingCommentsCount = readingLogs.reduce((acc, log) => acc + (log.comments || []).filter(c => c.status === 'pending').length, 0);
+        const totalPendingReading = pendingLogsCount + pendingCommentsCount;
         const tabs = [
             { id: 'students', label: '학급 관리', icon: '🌱' },
             { id: 'records', label: '기록 관리', icon: '📈' }, 
@@ -626,7 +630,7 @@
             { id: 'jobs', label: '직업 관리', icon: '💼' },
             { id: 'shop', label: '상점 아이템', icon: '🏪' },
             { id: 'approvals', label: `아이템 승인 (${dbData.PendingItems?.length || 0})`, icon: '🎁' },
-            ,{ id: 'reading', label: '독서 기록', icon: '📚' }
+            ,{ id: 'reading', label: "독서 기록 ()", icon: '📚' }
           ];
 
           return (
@@ -716,7 +720,7 @@
           { id: 'halloffame', label: '명예의 전당', icon: '🏆' },
           { id: 'announcements', label: '알림장', icon: '📢' },
           { id: 'shop', label: '상점', icon: '🛍️' },
-          ,{ id: 'reading', label: '독서 기록', icon: '📚' }
+            ,{ id: 'reading', label: "독서 기록 ()", icon: '📚' }
         ];
 
         const navItems = currentUser.role === 'parent' 
@@ -1431,7 +1435,7 @@
 
         const equippedItems = Array.isArray(student.equippedItems) ? student.equippedItems : [];
         const safeShopItems = Array.isArray(shopItems) ? shopItems : [];
-        const equippedIcons = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon).filter(Boolean);
+        const equippedIcons = (equippedItems.length > 0 ? [equippedItems[0]] : []).map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon).filter(Boolean);
         
         const handleGiveItem = () => {
           if(!selectedItemToGive) return showToast('아이템을 선택하세요.');
@@ -2011,11 +2015,11 @@
         const toggleEquip = (itemId) => {
           let newEquipped = [...equippedItems];
           if (newEquipped.some(id => String(id) === String(itemId))) {
-            newEquipped = newEquipped.filter(id => String(id) !== String(itemId));
+            newEquipped = [];
             if(showToast) showToast('장착 해제!');
           } else {
-            newEquipped.push(itemId);
-            if(showToast) showToast('장착 완료! ✨');
+            newEquipped = [itemId];
+            if(showToast) showToast('장착 완료! 👑');
           }
           updateStudentData(currentUser.id, { equippedItems: newEquipped });
         };
@@ -2031,7 +2035,7 @@
           if(showToast) showToast('소개말 저장 완료!');
         };
 
-        const equippedIcons = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon || '');
+        const equippedIcons = (equippedItems.length > 0 ? [equippedItems[0]] : []).map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon || '');
 
         return (
           <div className="space-y-6">
@@ -2447,7 +2451,7 @@
         const safeShopItems = Array.isArray(shopItems) ? shopItems : [];
         const safeJobs = Array.isArray(jobs) ? jobs : [];
         const currentJob = safeJobs.find(j => j.name === student.job);
-        const equippedIcons = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon).filter(Boolean);
+        const equippedIcons = (equippedItems.length > 0 ? [equippedItems[0]] : []).map(id => safeShopItems.find(i => String(i.id) === String(id))?.icon).filter(Boolean);
 
         return (
           <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={onClose}>
@@ -3370,19 +3374,23 @@
             const root = ReactDOM.createRoot(document.getElementById('root'));
       root.render(<App />);
       // ==========================================
+      // ==========================================
       // [새 기능] 독서 기록 (학생/학부모용)
       // ==========================================
       function ReadingLogsStudent({ currentUser, dbData, setDbData, syncToServer, showToast }) {
+        const [activeTab, setActiveTab] = useState(currentUser.role === 'parent' ? 'my' : 'write');
         const [title, setTitle] = useState('');
         const [author, setAuthor] = useState('');
         const [summary, setSummary] = useState('');
         const [thoughts, setThoughts] = useState('');
         const [rating, setRating] = useState(5);
+        const [commentInputs, setCommentInputs] = useState({});
 
         const logs = Array.isArray(dbData.ReadingLogs) ? dbData.ReadingLogs : [];
         const myLogs = currentUser.role === 'parent' 
             ? logs.filter(l => l.studentId === currentUser.studentId)
             : logs.filter(l => l.studentId === currentUser.id);
+        const classLogs = logs.filter(l => l.status === 'approved');
 
         const handleSubmit = (e) => {
           e.preventDefault();
@@ -3394,18 +3402,120 @@
             studentName: currentUser.name,
             title, author, summary, thoughts, rating,
             status: 'pending',
-            date: new Date().toISOString().split('T')[0]
+            date: new Date().toISOString().split('T')[0],
+            likes: [],
+            comments: []
           };
 
           setDbData(prev => ({ ...prev, ReadingLogs: [newLog, ...(prev.ReadingLogs || [])] }));
           syncToServer('ReadingLogs', 'INSERT', null, newLog);
           setTitle(''); setAuthor(''); setSummary(''); setThoughts(''); setRating(5);
           showToast('독서 기록이 제출되었습니다. 선생님의 승인을 기다려주세요!');
+          setActiveTab('my');
+        };
+
+        const handleLike = (logId) => {
+          if (currentUser.role === 'parent') return showToast('학생 계정만 누를 수 있습니다.');
+          const log = logs.find(l => l.id === logId);
+          if (!log) return;
+          const currentLikes = Array.isArray(log.likes) ? log.likes : [];
+          const hasLiked = currentLikes.includes(currentUser.id);
+          const newLikes = hasLiked ? currentLikes.filter(id => id !== currentUser.id) : [...currentLikes, currentUser.id];
+          const updatedLog = { ...log, likes: newLikes };
+          setDbData(prev => ({ ...prev, ReadingLogs: prev.ReadingLogs.map(l => l.id === logId ? updatedLog : l) }));
+          syncToServer('ReadingLogs', 'UPDATE', logId, updatedLog);
+        };
+
+        const handleComment = (logId) => {
+          if (currentUser.role === 'parent') return showToast('학생 계정만 작성할 수 있습니다.');
+          const content = commentInputs[logId] || '';
+          if (!content.trim()) return showToast('댓글 내용을 입력하세요.');
+          const log = logs.find(l => l.id === logId);
+          if (!log) return;
+
+          const newComment = {
+            id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+            studentId: currentUser.id,
+            studentName: currentUser.name,
+            content: content,
+            status: 'pending',
+            date: new Date().toISOString().split('T')[0]
+          };
+
+          const currentComments = Array.isArray(log.comments) ? log.comments : [];
+          const updatedLog = { ...log, comments: [...currentComments, newComment] };
+          
+          setDbData(prev => ({ ...prev, ReadingLogs: prev.ReadingLogs.map(l => l.id === logId ? updatedLog : l) }));
+          syncToServer('ReadingLogs', 'UPDATE', logId, updatedLog);
+          setCommentInputs(prev => ({ ...prev, [logId]: '' }));
+          showToast('댓글이 제출되었습니다. 선생님의 승인을 기다려주세요!');
+        };
+
+        const renderLog = (log) => {
+          const currentLikes = Array.isArray(log.likes) ? log.likes : [];
+          const hasLiked = currentLikes.includes(currentUser.id);
+          const currentComments = Array.isArray(log.comments) ? log.comments : [];
+          const visibleComments = currentUser.role === 'parent' 
+              ? currentComments.filter(c => c.status === 'approved')
+              : currentComments.filter(c => c.status === 'approved' || c.studentId === currentUser.id);
+
+          return (
+            <div key={log.id} className="bg-stone-50 p-5 rounded-2xl border border-stone-200">
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <h4 className="font-black text-lg text-stone-800">{log.title} <span className="text-sm font-bold text-stone-500">({log.author})</span></h4>
+                  <div className="text-sm text-stone-400">{log.studentName} · {log.date}</div>
+                </div>
+                <div className={`px-3 py-1 rounded-full text-xs font-bold ${log.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : log.status === 'rejected' ? 'bg-rose-100 text-rose-700' : 'bg-stone-200 text-stone-600'}`}>
+                  {log.status === 'approved' ? '승인됨' : log.status === 'rejected' ? '반려됨' : '대기중'}
+                </div>
+              </div>
+              <div className="flex mb-3">{'⭐'.repeat(log.rating)}{'🌑'.repeat(5-log.rating)}</div>
+              <p className="text-sm font-bold text-stone-600 mb-2"><span className="text-stone-400">요약:</span> {log.summary}</p>
+              <p className="text-sm font-bold text-stone-800 mb-4"><span className="text-stone-400">느낀점:</span> {log.thoughts}</p>
+              
+              {log.status === 'approved' && (
+                <div className="border-t border-stone-200 pt-3">
+                  <div className="flex gap-4 items-center mb-3">
+                    <button onClick={() => handleLike(log.id)} className={`flex items-center gap-1 font-bold ${hasLiked ? 'text-rose-500' : 'text-stone-400 hover:text-rose-400'}`}>
+                      {hasLiked ? '❤️' : '🤍'} {currentLikes.length}
+                    </button>
+                    <span className="text-stone-400 font-bold text-sm">💬 {currentComments.filter(c=>c.status === 'approved').length}</span>
+                  </div>
+                  
+                  {visibleComments.length > 0 && (
+                    <div className="space-y-2 mb-3 bg-white p-3 rounded-xl">
+                      {visibleComments.map(c => (
+                        <div key={c.id} className="text-sm">
+                          <span className="font-bold text-stone-800">{c.studentName}</span>
+                          {c.status === 'pending' && <span className="text-[10px] bg-stone-200 text-stone-500 px-1 py-0.5 rounded ml-1">승인 대기중</span>}
+                          <span className="text-stone-600 ml-2">{c.content}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {currentUser.role === 'student' && (
+                    <div className="flex gap-2">
+                      <input type="text" placeholder="칭찬이나 감상 댓글 달기..." value={commentInputs[log.id] || ''} onChange={e => setCommentInputs(prev => ({...prev, [log.id]: e.target.value}))} className="flex-1 bg-white border border-stone-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-300 outline-none" />
+                      <button onClick={() => handleComment(log.id)} className="bg-stone-800 hover:bg-stone-900 text-white text-sm font-bold px-4 py-2 rounded-lg transition">등록</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
         };
 
         return (
           <div className="space-y-6">
-            {currentUser.role === 'student' && (
+            <div className="flex gap-2">
+              {currentUser.role === 'student' && <button onClick={() => setActiveTab('write')} className={`flex-1 py-3 rounded-xl font-bold transition ${activeTab === 'write' ? 'bg-emerald-500 text-white shadow-md' : 'bg-white text-stone-500 hover:bg-emerald-50'}`}>새 글 쓰기</button>}
+              <button onClick={() => setActiveTab('my')} className={`flex-1 py-3 rounded-xl font-bold transition ${activeTab === 'my' ? 'bg-emerald-500 text-white shadow-md' : 'bg-white text-stone-500 hover:bg-emerald-50'}`}>내 독서 기록</button>
+              <button onClick={() => setActiveTab('class')} className={`flex-1 py-3 rounded-xl font-bold transition ${activeTab === 'class' ? 'bg-emerald-500 text-white shadow-md' : 'bg-white text-stone-500 hover:bg-emerald-50'}`}>우리 반 독서 기록</button>
+            </div>
+
+            {activeTab === 'write' && currentUser.role === 'student' && (
               <form onSubmit={handleSubmit} className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-emerald-200 space-y-4">
                 <h3 className="font-black text-xl text-emerald-900 mb-2">📚 새 독서 기록 작성</h3>
                 <div className="flex gap-4">
@@ -3426,31 +3536,31 @@
               </form>
             )}
 
-            <div className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-stone-200">
-              <h3 className="font-black text-xl text-stone-800 mb-6">{currentUser.role === 'parent' ? '자녀의 독서 기록' : '내 독서 기록 내역'}</h3>
-              <div className="space-y-4">
-                {myLogs.length === 0 ? (
-                  <div className="text-center py-10 text-stone-400 font-bold bg-stone-50 rounded-2xl">작성한 기록이 없습니다.</div>
-                ) : (
-                  myLogs.map(log => (
-                    <div key={log.id} className="bg-stone-50 p-5 rounded-2xl border border-stone-200">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <h4 className="font-black text-lg text-stone-800">{log.title} <span className="text-sm font-bold text-stone-500">({log.author})</span></h4>
-                          <div className="text-sm text-stone-400">{log.date}</div>
-                        </div>
-                        <div className={`px-3 py-1 rounded-full text-xs font-bold ${log.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : log.status === 'rejected' ? 'bg-rose-100 text-rose-700' : 'bg-stone-200 text-stone-600'}`}>
-                          {log.status === 'approved' ? '승인됨' : log.status === 'rejected' ? '반려됨' : '대기중'}
-                        </div>
-                      </div>
-                      <div className="flex mb-3">{'⭐'.repeat(log.rating)}{'🌑'.repeat(5-log.rating)}</div>
-                      <p className="text-sm font-bold text-stone-600 mb-2"><span className="text-stone-400">요약:</span> {log.summary}</p>
-                      <p className="text-sm font-bold text-stone-800"><span className="text-stone-400">느낀점:</span> {log.thoughts}</p>
-                    </div>
-                  ))
-                )}
+            {activeTab === 'my' && (
+              <div className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-stone-200">
+                <h3 className="font-black text-xl text-stone-800 mb-6">{currentUser.role === 'parent' ? '자녀의 독서 기록' : '내 독서 기록 내역'}</h3>
+                <div className="space-y-4">
+                  {myLogs.length === 0 ? (
+                    <div className="text-center py-10 text-stone-400 font-bold bg-stone-50 rounded-2xl">작성한 기록이 없습니다.</div>
+                  ) : (
+                    myLogs.map(renderLog)
+                  )}
+                </div>
               </div>
-            </div>
+            )}
+
+            {activeTab === 'class' && (
+              <div className="bg-white/90 p-6 rounded-[2rem] shadow-sm border border-emerald-100">
+                <h3 className="font-black text-xl text-emerald-900 mb-6">우리 반 친구들의 독서 기록</h3>
+                <div className="space-y-4">
+                  {classLogs.length === 0 ? (
+                    <div className="text-center py-10 text-stone-400 font-bold bg-stone-50 rounded-2xl">아직 승인된 친구들의 독서 기록이 없습니다.</div>
+                  ) : (
+                    classLogs.map(renderLog)
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         );
       }
@@ -3462,7 +3572,13 @@
         const [activeTab, setActiveTab] = useState('pending');
         const logs = Array.isArray(dbData.ReadingLogs) ? dbData.ReadingLogs : [];
         const pendingLogs = logs.filter(l => l.status === 'pending');
-        const pastLogs = logs.filter(l => l.status !== 'pending');
+        const logsWithPendingComments = logs.filter(l => l.status === 'approved' && Array.isArray(l.comments) && l.comments.some(c => c.status === 'pending'));
+        
+        // Items to show in '승인 대기' tab
+        const pendingItems = [...pendingLogs, ...logsWithPendingComments].filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i);
+        
+        // Items to show in '처리 완료' tab (No pending logs, no pending comments)
+        const pastLogs = logs.filter(l => !pendingItems.find(p => p.id === l.id));
 
         const applyPenalty = (studentId) => {
           const student = dbData.Users.find(u => u.id === studentId);
@@ -3472,7 +3588,7 @@
           updateStudentData(studentId, { exp: newExp, money: newMoney, penaltyAlert: true }, '독서록 비승인/삭제');
         };
 
-        const handleApprove = (log) => {
+        const handleApproveLog = (log) => {
           const student = dbData.Users.find(u => u.id === log.studentId);
           if (student) {
             updateStudentData(log.studentId, { exp: Number(student.exp || 0) + 20, money: Number(student.money || 0) + 10 }, '독서록 승인');
@@ -3480,18 +3596,18 @@
           const updatedLog = { ...log, status: 'approved' };
           setDbData(prev => ({ ...prev, ReadingLogs: prev.ReadingLogs.map(l => l.id === log.id ? updatedLog : l) }));
           syncToServer('ReadingLogs', 'UPDATE', log.id, updatedLog);
-          showToast('승인되었습니다. (+20 EXP, +10 결)');
+          showToast('글이 승인되었습니다. (+20 EXP, +10 결)');
         };
 
-        const handleReject = (log) => {
+        const handleRejectLog = (log) => {
           applyPenalty(log.studentId);
           const updatedLog = { ...log, status: 'rejected' };
           setDbData(prev => ({ ...prev, ReadingLogs: prev.ReadingLogs.map(l => l.id === log.id ? updatedLog : l) }));
           syncToServer('ReadingLogs', 'UPDATE', log.id, updatedLog);
-          showToast('비승인 처리되었습니다. (학생 경험치/돈 차감)');
+          showToast('글이 비승인 처리되었습니다. (학생 경험치/돈 차감)');
         };
 
-        const handleDelete = (log) => {
+        const handleDeleteLog = (log) => {
           if (!window.confirm('정말 삭제하시겠습니까? (삭제 시 페널티 적용)')) return;
           applyPenalty(log.studentId);
           setDbData(prev => ({ ...prev, ReadingLogs: prev.ReadingLogs.filter(l => l.id !== log.id) }));
@@ -3499,15 +3615,41 @@
           showToast('삭제되었습니다. (학생 경험치/돈 차감)');
         };
 
+        const handleApproveComment = (log, commentId) => {
+          const comment = log.comments.find(c => c.id === commentId);
+          if (!comment) return;
+          
+          const student = dbData.Users.find(u => u.id === comment.studentId);
+          if (student) {
+            updateStudentData(comment.studentId, { exp: Number(student.exp || 0) + 5, money: Number(student.money || 0) + 3 }, '독서록 댓글 승인');
+          }
+          
+          const updatedComments = log.comments.map(c => c.id === commentId ? { ...c, status: 'approved' } : c);
+          const updatedLog = { ...log, comments: updatedComments };
+          
+          setDbData(prev => ({ ...prev, ReadingLogs: prev.ReadingLogs.map(l => l.id === log.id ? updatedLog : l) }));
+          syncToServer('ReadingLogs', 'UPDATE', log.id, updatedLog);
+          showToast('댓글이 승인되었습니다. (+5 EXP, +3 결)');
+        };
+
+        const handleRejectComment = (log, commentId) => {
+          const updatedComments = log.comments.filter(c => c.id !== commentId);
+          const updatedLog = { ...log, comments: updatedComments };
+          
+          setDbData(prev => ({ ...prev, ReadingLogs: prev.ReadingLogs.map(l => l.id === log.id ? updatedLog : l) }));
+          syncToServer('ReadingLogs', 'UPDATE', log.id, updatedLog);
+          showToast('댓글이 반려(삭제)되었습니다.');
+        };
+
         return (
           <div className="space-y-6">
             <div className="flex gap-2">
-              <button onClick={() => setActiveTab('pending')} className={`flex-1 py-3 rounded-xl font-bold transition ${activeTab === 'pending' ? 'bg-emerald-500 text-white shadow-md' : 'bg-white text-stone-500 hover:bg-emerald-50'}`}>승인 대기 ({pendingLogs.length})</button>
+              <button onClick={() => setActiveTab('pending')} className={`flex-1 py-3 rounded-xl font-bold transition ${activeTab === 'pending' ? 'bg-emerald-500 text-white shadow-md' : 'bg-white text-stone-500 hover:bg-emerald-50'}`}>승인 대기 ({pendingItems.length})</button>
               <button onClick={() => setActiveTab('past')} className={`flex-1 py-3 rounded-xl font-bold transition ${activeTab === 'past' ? 'bg-emerald-500 text-white shadow-md' : 'bg-white text-stone-500 hover:bg-emerald-50'}`}>처리 완료 ({pastLogs.length})</button>
             </div>
 
             <div className="space-y-4">
-              {(activeTab === 'pending' ? pendingLogs : pastLogs).map(log => (
+              {(activeTab === 'pending' ? pendingItems : pastLogs).map(log => (
                 <div key={log.id} className="bg-white/95 p-6 rounded-[2rem] shadow-sm border border-emerald-100">
                   <div className="flex justify-between items-start mb-4 border-b border-emerald-50 pb-4">
                     <div>
@@ -3523,16 +3665,16 @@
                       <h4 className="font-black text-xl text-stone-800">{log.title} <span className="text-base text-stone-500">({log.author})</span></h4>
                       <div className="text-amber-400 tracking-widest mt-1">{'★'.repeat(log.rating)}{'☆'.repeat(5-log.rating)}</div>
                     </div>
-                    {activeTab === 'pending' ? (
+                    {log.status === 'pending' ? (
                       <div className="flex gap-2">
-                        <button onClick={() => handleApprove(log)} className="bg-emerald-100 hover:bg-emerald-200 text-emerald-700 font-bold px-4 py-2 rounded-xl transition">승인</button>
-                        <button onClick={() => handleReject(log)} className="bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold px-4 py-2 rounded-xl transition">비승인</button>
+                        <button onClick={() => handleApproveLog(log)} className="bg-emerald-100 hover:bg-emerald-200 text-emerald-700 font-bold px-4 py-2 rounded-xl transition">승인</button>
+                        <button onClick={() => handleRejectLog(log)} className="bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold px-4 py-2 rounded-xl transition">비승인</button>
                       </div>
                     ) : (
-                      <button onClick={() => handleDelete(log)} className="bg-rose-50 hover:bg-rose-100 text-rose-500 font-bold px-4 py-2 rounded-xl transition">삭제</button>
+                      <button onClick={() => handleDeleteLog(log)} className="bg-rose-50 hover:bg-rose-100 text-rose-500 font-bold px-4 py-2 rounded-xl transition">삭제</button>
                     )}
                   </div>
-                  <div className="space-y-3">
+                  <div className="space-y-3 mb-4">
                     <div className="bg-stone-50 p-4 rounded-xl">
                       <div className="text-xs font-black text-stone-400 mb-1">내용 요약</div>
                       <p className="text-stone-700 font-bold">{log.summary}</p>
@@ -3542,9 +3684,33 @@
                       <p className="text-stone-800 font-bold">{log.thoughts}</p>
                     </div>
                   </div>
+                  
+                  {/* Comments Section */}
+                  {Array.isArray(log.comments) && log.comments.length > 0 && (
+                    <div className="bg-stone-50 border border-stone-200 p-4 rounded-xl mt-4">
+                      <h5 className="font-black text-sm text-stone-700 mb-3">💬 댓글 모음</h5>
+                      <div className="space-y-3">
+                        {log.comments.map(c => (
+                          <div key={c.id} className="flex justify-between items-center bg-white p-3 rounded-lg border border-stone-100 shadow-sm">
+                            <div className="text-sm">
+                              <span className="font-bold text-stone-800">{c.studentName}</span>
+                              <span className={`text-[10px] px-2 py-0.5 rounded ml-2 ${c.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{c.status === 'approved' ? '승인됨' : '승인 대기'}</span>
+                              <p className="text-stone-600 mt-1">{c.content}</p>
+                            </div>
+                            {c.status === 'pending' && (
+                              <div className="flex gap-2">
+                                <button onClick={() => handleApproveComment(log, c.id)} className="text-xs bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-3 py-1.5 rounded transition">승인</button>
+                                <button onClick={() => handleRejectComment(log, c.id)} className="text-xs bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold px-3 py-1.5 rounded transition">반려</button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
-              {(activeTab === 'pending' ? pendingLogs : pastLogs).length === 0 && (
+              {(activeTab === 'pending' ? pendingItems : pastLogs).length === 0 && (
                 <div className="text-center py-10 text-stone-400 font-bold bg-white/50 rounded-[2rem]">해당하는 기록이 없습니다.</div>
               )}
             </div>
