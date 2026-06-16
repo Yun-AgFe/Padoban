@@ -1351,6 +1351,7 @@
         const [showUpload, setShowUpload] = useState(false);
         const [newItemName, setNewItemName] = useState('');
         const [newItemIcon, setNewItemIcon] = useState('🍎');
+        const [activeTab, setActiveTab] = useState('icon');
         const shopItems = Array.isArray(dbData.ShopItems) ? dbData.ShopItems : [];
         const ownedItems = Array.isArray(currentUser.ownedItems) ? currentUser.ownedItems : [];
         const students = Array.isArray(dbData.Users) ? dbData.Users.filter(u => u.role === 'student') : [];
@@ -1403,8 +1404,18 @@
               <div className="font-black text-amber-800 text-lg">내 지갑</div>
               <div className="text-2xl font-black text-amber-600 bg-amber-50 border border-amber-200 px-4 py-2 rounded-2xl">🪙 {currentUser.money}</div>
             </div>
+
+            <div className="flex gap-2 p-2 bg-stone-100/80 rounded-3xl w-full mx-auto shadow-inner border border-stone-200/50">
+              <button onClick={() => setActiveTab('icon')} className={`flex-1 py-3.5 rounded-2xl font-black text-sm transition-all ${activeTab === 'icon' ? 'bg-white text-orange-600 shadow-sm border border-stone-100' : 'text-stone-400 hover:text-stone-600'}`}>아이콘</button>
+              <button onClick={() => setActiveTab('background')} className={`flex-1 py-3.5 rounded-2xl font-black text-sm transition-all ${activeTab === 'background' ? 'bg-white text-sky-600 shadow-sm border border-stone-100' : 'text-stone-400 hover:text-stone-600'}`}>배경</button>
+              <button onClick={() => setActiveTab('other')} className={`flex-1 py-3.5 rounded-2xl font-black text-sm transition-all ${activeTab === 'other' ? 'bg-white text-stone-600 shadow-sm border border-stone-100' : 'text-stone-400 hover:text-stone-600'}`}>기타</button>
+            </div>
+
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {shopItems.map((item, idx) => {
+              {shopItems.filter(item => (['background', 'other'].includes(item?.type) ? item.type : 'icon') === activeTab).length === 0 && (
+                <div className="col-span-full text-center py-10 bg-stone-50/50 rounded-3xl text-stone-400 font-bold">이 카테고리에 등록된 아이템이 아직 없어요!</div>
+              )}
+              {shopItems.filter(item => (['background', 'other'].includes(item?.type) ? item.type : 'icon') === activeTab).map((item, idx) => {
                 if (!item) return null; const safeId = item.id || ("temp_" + idx); item.id = safeId;
                 const isOwned = ownedItems.some(id => String(id) === String(item.id));
                 const soldCount = getSoldCount(item);
@@ -2054,7 +2065,7 @@
         const toggleEquip = (itemId) => {
           const itemToEquip = safeShopItems.find(i => String(i.id) === String(itemId));
           if (!itemToEquip) return;
-          const itemType = itemToEquip.type || 'icon';
+          const itemType = ['background', 'other'].includes(itemToEquip.type) ? itemToEquip.type : 'icon';
           
           if (itemType === 'other') {
             if(showToast) showToast('이 아이템은 장착할 수 없습니다.');
@@ -2066,7 +2077,7 @@
             newEquipped = newEquipped.filter(id => String(id) !== String(itemId));
             if(showToast) showToast('장착 해제!');
           } else {
-            const itemsOfSameType = safeShopItems.filter(i => (i.type || 'icon') === itemType).map(i => String(i.id));
+            const itemsOfSameType = safeShopItems.filter(i => (['background', 'other'].includes(i.type) ? i.type : 'icon') === itemType).map(i => String(i.id));
             newEquipped = newEquipped.filter(id => !itemsOfSameType.includes(String(id)));
             newEquipped.push(String(itemId));
             if(showToast) showToast('장착 완료! 👑');
@@ -2093,7 +2104,7 @@
           if(showToast) showToast('소개말 저장 완료!');
         };
 
-        const equippedIconItem = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))).find(i => (i?.type || 'icon') === 'icon');
+        const equippedIconItem = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))).find(i => (['background', 'other'].includes(i?.type) ? i.type : 'icon') === 'icon');
         const equippedBgItem = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))).find(i => i?.type === 'background');
         
         const profileIcon = equippedIconItem?.icon;
@@ -2211,7 +2222,10 @@
               ) : (
                 <div className="space-y-6">
                   {['icon', 'background', 'other'].map(type => {
-                    const filteredItems = ownedItems.filter(itemId => (safeShopItems.find(i => String(i.id) === String(itemId))?.type || 'icon') === type);
+                    const filteredItems = ownedItems.filter(itemId => {
+                      const t = safeShopItems.find(i => String(i.id) === String(itemId))?.type;
+                      return (['background', 'other'].includes(t) ? t : 'icon') === type;
+                    });
                     const typeName = type === 'icon' ? '아이콘' : (type === 'background' ? '배경' : '기타');
                     const borderColor = type === 'icon' ? 'border-orange-400' : (type === 'background' ? 'border-sky-400' : 'border-stone-400');
                     if (filteredItems.length === 0) return null;
@@ -2554,7 +2568,7 @@
         const safeShopItems = Array.isArray(shopItems) ? shopItems : [];
         const safeJobs = Array.isArray(jobs) ? jobs : [];
         const currentJob = safeJobs.find(j => j.name === student.job);
-        const equippedIconItem = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))).find(i => (i?.type || 'icon') === 'icon');
+        const equippedIconItem = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))).find(i => (['background', 'other'].includes(i?.type) ? i.type : 'icon') === 'icon');
         const equippedBgItem = equippedItems.map(id => safeShopItems.find(i => String(i.id) === String(id))).find(i => i?.type === 'background');
         
         const profileIcon = equippedIconItem?.icon;
