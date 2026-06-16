@@ -3432,6 +3432,7 @@
           if (!content.trim()) return showToast('댓글 내용을 입력하세요.');
           const log = logs.find(l => l.id === logId);
           if (!log) return;
+          if (Array.isArray(log.comments) && log.comments.some(c => c.studentId === currentUser.id)) return showToast('댓글은 1인당 1개만 작성할 수 있습니다.');
 
           const newComment = {
             id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
@@ -3495,7 +3496,7 @@
                     </div>
                   )}
 
-                  {currentUser.role === 'student' && (
+                  {currentUser.role === 'student' && !currentComments.some(c => c.studentId === currentUser.id) && (
                     <div className="flex gap-2">
                       <input type="text" placeholder="칭찬이나 감상 댓글 달기..." value={commentInputs[log.id] || ''} onChange={e => setCommentInputs(prev => ({...prev, [log.id]: e.target.value}))} className="flex-1 bg-white border border-stone-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-300 outline-none" />
                       <button onClick={() => handleComment(log.id)} className="bg-stone-800 hover:bg-stone-900 text-white text-sm font-bold px-4 py-2 rounded-lg transition">등록</button>
