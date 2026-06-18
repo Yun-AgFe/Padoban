@@ -286,11 +286,12 @@
           setSyncing(true);
           try {
             const res = await fetch(SCRIPT_URL);
-            const latestData = await res.json();
-            const latestStudent = latestData.Users?.find(u => u.id === studentId) || dbData.Users.find(u => u.id === studentId);
+            const rawData = await res.json();
+            const parsedData = processServerData(rawData);
+            const latestStudent = parsedData.Users?.find(u => u.id === studentId) || dbData.Users.find(u => u.id === studentId);
             
             if (!latestStudent) return;
-            setDbData(prev => ({ ...prev, ...latestData }));
+            setDbData(prev => ({ ...prev, ...parsedData }));
             
             const updates = typeof updaterOrUpdates === 'function' ? updaterOrUpdates(latestStudent) : updaterOrUpdates;
             const updatedStudent = { ...latestStudent, ...updates };
@@ -344,9 +345,10 @@
           setSyncing(true);
           try {
             const res = await fetch(SCRIPT_URL);
-            const latestData = await res.json();
+            const rawData = await res.json();
+            const parsedData = processServerData(rawData);
             
-            let newUsers = [...(latestData.Users || dbData.Users)];
+            let newUsers = [...(parsedData.Users || dbData.Users)];
             const newLogs = [];
 
             // 순차적으로 API 호출하기 (앱스 스크립트 부하 방지)
@@ -407,7 +409,7 @@
             }
 
             // 전체 데이터 갱신 및 내 상태 병합
-            const newDbData = { ...latestData, Users: newUsers, RewardLogs: [...newLogs, ...(latestData.RewardLogs||[])] };
+            const newDbData = { ...parsedData, Users: newUsers, RewardLogs: [...newLogs, ...(parsedData.RewardLogs||[])] };
             setDbData(newDbData);
             if (currentUser && currentUser.id !== 'parent') {
               const updatedMe = newUsers.find(u => u.id === currentUser.id);
