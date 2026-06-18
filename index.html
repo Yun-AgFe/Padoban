@@ -196,12 +196,13 @@
               HallOfFame: Array.isArray(data.HallOfFame) ? data.HallOfFame : [],
               Tasks: parsedTasks,
               Jobs: Array.isArray(data.Jobs) ? data.Jobs : [],
-                            PurchaseLogs: Array.isArray(data.PurchaseLogs) ? data.PurchaseLogs : [],
+              PurchaseLogs: Array.isArray(data.PurchaseLogs) ? data.PurchaseLogs : [],
               RewardLogs: Array.isArray(data.RewardLogs) ? data.RewardLogs : [],
               Records: Array.isArray(data.Records) ? data.Records : [],
               RecordCategories: Array.isArray(data.RecordCategories) ? data.RecordCategories : [],
               Letters: Array.isArray(data.Letters) ? data.Letters.map(l => ({ ...l, likes: safeParseArray(l.likes) })) : [],
-              ComplimentTargets: Array.isArray(data.ComplimentTargets) ? data.ComplimentTargets : [], ReadingLogs: Array.isArray(data.ReadingLogs) ? data.ReadingLogs.map(l => ({ ...l, likes: safeParseArray(l.likes), comments: safeParseArray(l.comments) })) : []
+              ComplimentTargets: Array.isArray(data.ComplimentTargets) ? data.ComplimentTargets : [],
+              ReadingLogs: Array.isArray(data.ReadingLogs) ? data.ReadingLogs.map(l => ({ ...l, likes: safeParseArray(l.likes), comments: safeParseArray(l.comments) })) : []
             });
           } catch (error) {
             console.error("Data Fetch Error:", error);
@@ -218,8 +219,27 @@
 
         useEffect(() => { fetchData(); }, []);
 
+        const pollData = async () => {
+          try {
+            const res = await fetch(SCRIPT_URL);
+            const data = await res.json();
+            setDbData(prev => ({ ...prev, ...data }));
+            if (currentUser && currentUser.id !== 'parent') {
+              const updatedMe = data.Users?.find(u => u.id === currentUser.id);
+              if (updatedMe) {
+                setCurrentUser(updatedMe);
+                localStorage.setItem('padoUser', JSON.stringify(updatedMe));
+              }
+            }
+          } catch (e) { console.error('Polling failed:', e); }
+        };
+
+        useEffect(() => {
+          const interval = setInterval(pollData, 45000);
+          return () => clearInterval(interval);
+        }, [currentUser]);
+
         const syncToServer = async (sheetName, action, id, updateData) => {
-          setSyncing(true);
           try {
             const res = await fetch(SCRIPT_URL, {
               method: 'POST',
@@ -231,8 +251,6 @@
           } catch (error) {
             console.error("Sync Error:", error);
             alert("데이터를 저장하지 못했습니다. (네트워크 오류)");
-          } finally {
-            setSyncing(false);
           }
         };
 
@@ -244,12 +262,6 @@
             localStorage.setItem('padoUser', JSON.stringify(parentUser));
             setLoginError('');
             showToast('학부모님 환영합니다! 🌊');
-            if (user.penaltyAlert) {
-              alert('독서록이 거부되어 경험치과 돈이 깎입니다');
-              const updatedUser = { ...user, penaltyAlert: false };
-              setDbData(prev => ({ ...prev, Users: prev.Users.map(u => u.id === user.id ? updatedUser : u) }));
-              syncToServer('Users', 'UPDATE', user.id, updatedUser);
-            }
             return;
           }
           const users = Array.isArray(dbData.Users) ? dbData.Users : [];
@@ -257,7 +269,7 @@
           
           if (user) {
             setCurrentUser(user);
-            localStorage.setItem('padoUser', JSON.stringify(user)); // 브라우저에 저장
+            localStorage.setItem('padoUser', JSON.stringify(user));
             setLoginError('');
             showToast(`환영합니다, ${user.name}님! 🌊`);
           } else {
@@ -265,136 +277,128 @@
           }
         };
 
-        const updateStudentData = (studentId, updates, reason = '시스템') => {
-          const studentToUpdate = dbData.Users.find(u => u.id === studentId);
-          if (!studentToUpdate) return;
-          
-          let expDelta = 0;
-          let moneyDelta = 0;
-          if (updates.exp !== undefined) expDelta = Number(updates.exp || 0) - Number(studentToUpdate.exp || 0);
-          if (updates.money !== undefined) moneyDelta = Number(updates.money || 0) - Number(studentToUpdate.money || 0);
+        const updateStudentData = async (studentId, updaterOrUpdates, reason = '시스템') => {
+          setSyncing(true);
+          try {
+            const res = await fetch(SCRIPT_URL);
+            const latestData = await res.json();
+            const latestStudent = latestData.Users?.find(u => u.id === studentId) || dbData.Users.find(u => u.id === studentId);
+            
+            if (!latestStudent) return;
+            setDbData(prev => ({ ...prev, ...latestData }));
+            
+            const updates = typeof updaterOrUpdates === 'function' ? updaterOrUpdates(latestStudent) : updaterOrUpdates;
+            const updatedStudent = { ...latestStudent, ...updates };
+            
+            if (updates.exp !== undefined) {
+              const newExp = Number(updates.exp);
+              let newLevel = 1;
+              let tempExp = newExp;
+              while (tempExp >= EXP_PER_LEVEL) {
+                tempExp -= EXP_PER_LEVEL;
+                newLevel++;
+              }
+              updatedStudent.exp = newExp;
+              updatedStudent.level = newLevel;
+            }
 
-          if (expDelta !== 0 || moneyDelta !== 0) {
-            const newLog = {
-              id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-              date: new Date().toLocaleString('ko-KR'),
-              studentId: studentId,
-              studentName: studentToUpdate.name,
-              expDelta: expDelta,
-              moneyDelta: moneyDelta,
-              reason: reason
-            };
             setDbData(prev => ({
               ...prev,
-              RewardLogs: [newLog, ...(prev.RewardLogs || [])]
+              Users: prev.Users.map(u => u.id === studentId ? updatedStudent : u)
             }));
-            syncToServer('RewardLogs', 'INSERT', null, newLog);
-          }
 
-          const updatedStudent = { ...studentToUpdate, ...updates };
-          
-          if (updates.exp !== undefined) {
-            updatedStudent.exp = Number(updatedStudent.exp || 0);
-            updatedStudent.level = Math.floor(updatedStudent.exp / EXP_PER_LEVEL) + 1;
-          }
-          if (updates.money !== undefined) {
-            updatedStudent.money = Number(updatedStudent.money || 0);
-          }
+            if (currentUser?.id === studentId) {
+              setCurrentUser(updatedStudent);
+              localStorage.setItem('padoUser', JSON.stringify(updatedStudent));
+            }
 
-          setDbData(prev => ({
-            ...prev,
-            Users: prev.Users.map(u => u.id === studentId ? updatedStudent : u)
-          }));
-
-          if (currentUser?.id === studentId) {
-            setCurrentUser(updatedStudent);
+            const dataToSync = {
+              exp: updatedStudent.exp,
+              level: updatedStudent.level,
+              money: updatedStudent.money,
+              title: updatedStudent.title,
+              ownedItems: updatedStudent.ownedItems,
+              equippedItems: updatedStudent.equippedItems,
+              ownedTitles: updatedStudent.ownedTitles,
+              intro: updatedStudent.intro,
+              faceUrl: updatedStudent.faceUrl,
+              job: updatedStudent.job
+            };
+            if (updates.pwd !== undefined) dataToSync.pwd = updates.pwd;
+            
+            await syncToServer('Users', 'UPDATE', studentId, dataToSync);
+          } catch (e) {
+            console.error('Update failed:', e);
+            showToast('데이터 저장 중 오류가 발생했습니다.');
+          } finally {
+            setSyncing(false);
           }
-
-          const dataToSync = {
-            exp: updatedStudent.exp,
-            level: updatedStudent.level,
-            money: updatedStudent.money,
-            title: updatedStudent.title,
-            ownedItems: updatedStudent.ownedItems,
-            equippedItems: updatedStudent.equippedItems,
-            ownedTitles: updatedStudent.ownedTitles,
-            intro: updatedStudent.intro,
-            faceUrl: updatedStudent.faceUrl,
-            job: updatedStudent.job
-          };
-          if (updates.pwd !== undefined) dataToSync.pwd = updates.pwd;
-          
-          syncToServer('Users', 'UPDATE', studentId, dataToSync);
         };
 
-        const batchUpdateStudents = async (studentIds, type, val, reason = '교사 일괄 지급') => {
+        const batchUpdateStudents = async (studentIds, type, val, reason = '일괄 지급') => {
           setSyncing(true);
-          let newUsers = [...dbData.Users];
-          const updatePayloads = [];
-          const newLogs = [];
+          try {
+            const res = await fetch(SCRIPT_URL);
+            const latestData = await res.json();
+            
+            let newUsers = [...(latestData.Users || dbData.Users)];
+            const newLogs = [];
 
-          studentIds.forEach(id => {
-            const student = newUsers.find(u => u.id === id);
-            if (student) {
-              const updated = { ...student };
-              const valNum = Number(val);
-              
-              if (valNum !== 0) {
-                newLogs.push({
-                  id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-                  date: new Date().toLocaleString('ko-KR'),
-                  studentId: id,
-                  studentName: student.name,
-                  expDelta: type === 'exp' ? valNum : 0,
-                  moneyDelta: type === 'money' ? valNum : 0,
-                  reason: reason
+            // 순차적으로 API 호출하기 (앱스 스크립트 부하 방지)
+            for (const id of studentIds) {
+              const student = newUsers.find(u => u.id === id);
+              if (student) {
+                const updated = { ...student };
+                const valNum = Number(val);
+                
+                if (valNum !== 0) {
+                  const newLog = {
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                    date: new Date().toLocaleString('ko-KR'),
+                    studentId: id,
+                    studentName: student.name,
+                    reason: reason,
+                    expDelta: type === 'exp' ? valNum : 0,
+                    moneyDelta: type === 'money' ? valNum : 0
+                  };
+                  newLogs.push(newLog);
+                  await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ sheetName: 'RewardLogs', action: 'INSERT', id: null, data: newLog })
+                  });
+                }
+
+                if (type === 'exp') {
+                  updated.exp = Number(updated.exp || 0) + valNum;
+                  let newLevel = 1;
+                  let tempExp = updated.exp;
+                  while (tempExp >= EXP_PER_LEVEL) {
+                    tempExp -= EXP_PER_LEVEL;
+                    newLevel++;
+                  }
+                  updated.level = newLevel;
+                } else if (type === 'money') {
+                  updated.money = Number(updated.money || 0) + valNum;
+                }
+                
+                newUsers = newUsers.map(u => u.id === id ? updated : u);
+                
+                await fetch(SCRIPT_URL, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                  body: JSON.stringify({
+                    sheetName: 'Users',
+                    action: 'UPDATE',
+                    id: id,
+                    data: {
+                      exp: updated.exp, level: updated.level, money: updated.money, title: updated.title,
+                      ownedItems: updated.ownedItems, equippedItems: updated.equippedItems,
+                      ownedTitles: updated.ownedTitles, intro: updated.intro, faceUrl: updated.faceUrl, job: updated.job
+                    }
+                  })
                 });
               }
-              
-              if (type === 'exp') {
-                updated.exp = Number(student.exp || 0) + valNum;
-                updated.level = Math.floor(updated.exp / EXP_PER_LEVEL) + 1;
-              } else if (type === 'money') {
-                updated.money = Number(student.money || 0) + valNum;
-              }
-              
-              newUsers = newUsers.map(u => u.id === id ? updated : u);
-
-              updatePayloads.push({
-                id: id,
-                data: {
-                  exp: updated.exp, 
-                  level: updated.level, 
-                  money: updated.money, 
-                  title: updated.title,
-                  ownedItems: updated.ownedItems, 
-                  equippedItems: updated.equippedItems,
-                  ownedTitles: updated.ownedTitles, 
-                  intro: updated.intro,
-                  faceUrl: updated.faceUrl,
-                  job: updated.job
-                }
-              });
-            }
-          });
-
-          setDbData(prev => ({ 
-            ...prev, 
-            Users: newUsers,
-            RewardLogs: [...newLogs, ...(prev.RewardLogs || [])]
-          }));
-
-          for (const payload of updatePayloads) {
-            try {
-              await fetch(SCRIPT_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ sheetName: 'Users', action: 'UPDATE', id: payload.id, data: payload.data })
-              });
-            } catch(e) { console.error(e); }
-          }
-          
-          for (const log of newLogs) {
              syncToServer('RewardLogs', 'INSERT', null, log);
           }
           setSyncing(false);
@@ -1382,7 +1386,7 @@
           if (ownedItems.some(id => String(id) === String(item.id))) return showToast('이미 보유한 아이템!');
           if (currentUser.money < itemPrice) return showToast('용돈이 부족해요!');
           
-          updateStudentData(currentUser.id, { money: Number(currentUser.money || 0) - itemPrice, ownedItems: [...ownedItems, item.id] }, '상점 구매: ' + itemName);
+          updateStudentData(currentUser.id, u => ({ money: Number(u.money || 0) - itemPrice, ownedItems: [...(Array.isArray(u.ownedItems)?u.ownedItems:[]), item.id] }), '상점 구매: ' + itemName);
           
           const newLog = {
             id: Date.now().toString(),
@@ -1487,7 +1491,7 @@
           if(!selectedItemToGive) return showToast('아이템을 선택하세요.');
           const owned = Array.isArray(student.ownedItems) ? student.ownedItems : [];
           if(owned.some(id => String(id) === String(selectedItemToGive))) return showToast('이미 가진 아이템입니다.');
-          updateStudentData(student.id, { ownedItems: [...owned, selectedItemToGive] });
+          updateStudentData(student.id, u => ({ ownedItems: [...(Array.isArray(u.ownedItems)?u.ownedItems:[]), selectedItemToGive] }));
           showToast(`${student.name}에게 선물을 주었습니다!`);
           setSelectedItemToGive('');
         };
@@ -1496,7 +1500,7 @@
           if(!newTitle.trim()) return showToast('칭호를 입력하세요.');
           const currentTitles = Array.isArray(student.ownedTitles) ? student.ownedTitles : [];
           if(currentTitles.includes(newTitle)) return showToast('이미 가진 칭호입니다.');
-          updateStudentData(student.id, { ownedTitles: [...currentTitles, newTitle], title: newTitle });
+          updateStudentData(student.id, u => ({ ownedTitles: [...(Array.isArray(u.ownedTitles)?u.ownedTitles:[]), newTitle], title: newTitle }));
           showToast(`${student.name}에게 새 칭호를 주었습니다!`);
           setNewTitle('');
         };
@@ -1537,11 +1541,11 @@
                <input type="text" placeholder="지급/차감 사유 (예: 발표 우수)" value={reason} onChange={e => setReason(e.target.value)} className="w-full bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-stone-300 font-bold text-stone-800 mb-2" />
               <div className="flex gap-2">
                 <input type="number" placeholder="경험치 (예:10)" value={expAmount} onChange={e => setExpAmount(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-sky-300 font-bold text-stone-800" />
-                <button onClick={() => { updateStudentData(student.id, { exp: Number(student.exp) + Number(expAmount) }, reason || '교사 개별 지급'); showToast(`${student.name} EXP 지급!`); setExpAmount(''); }} className="bg-sky-400 hover:bg-sky-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">EXP 지급</button>
+                <button onClick={() => { updateStudentData(student.id, u => ({ exp: Number(u.exp||0) + Number(expAmount) }), reason || '교사 개별 지급'); showToast(`${student.name} EXP 지급!`); setExpAmount(''); }} className="bg-sky-400 hover:bg-sky-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">EXP 지급</button>
               </div>
               <div className="flex gap-2">
                 <input type="number" placeholder="용돈 (예:100)" value={moneyAmount} onChange={e => setMoneyAmount(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-amber-300 font-bold text-stone-800" />
-                <button onClick={() => { updateStudentData(student.id, { money: Number(student.money) + Number(moneyAmount) }, reason || '교사 개별 지급'); showToast(`${student.name} 용돈 지급!`); setMoneyAmount(''); }} className="bg-amber-400 hover:bg-amber-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">용돈 지급</button>
+                <button onClick={() => { updateStudentData(student.id, u => ({ money: Number(u.money||0) + Number(moneyAmount) }), reason || '교사 개별 지급'); showToast(`${student.name} 용돈 지급!`); setMoneyAmount(''); }} className="bg-amber-400 hover:bg-amber-500 text-white font-bold px-4 py-3 rounded-xl text-sm shadow-sm shrink-0 whitespace-nowrap transition">용돈 지급</button>
               </div>
               <div className="flex gap-2">
                 <input type="text" placeholder="새로운 칭호 하사하기" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="flex-1 bg-stone-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-orange-300 font-bold text-stone-800" />
@@ -1779,10 +1783,7 @@
           const moneyVal = parseInt(money, 10) || 0;
           const student = students.find(s => s.id === studentId);
           if (student && (expVal > 0 || moneyVal > 0)) {
-              updateStudentData(studentId, {
-                exp: Number(student.exp || 0) + expVal,
-                money: Number(student.money || 0) + moneyVal
-              }, '할 일 완료 보상');
+              updateStudentData(studentId, u => ({ exp: Number(u.exp || 0) + expVal, money: Number(u.money || 0) + moneyVal }), '할 일 완료 보상');
 
           } else {
              showToast(`${studentName} 학생 확인 완료!`);
@@ -2355,7 +2356,7 @@
           syncToServer('Emotions', 'INSERT', null, newPost);
           
           if (currentUser.role === 'student' && updateStudentData) {
-            updateStudentData(currentUser.id, { exp: Number(currentUser.exp || 0) + 10 }, '마음 일기 작성');
+            updateStudentData(currentUser.id, u => ({ exp: Number(u.exp || 0) + 10 }), '마음 일기 작성');
           }
 
           setContent(''); setIsSecret(false);
@@ -2373,7 +2374,7 @@
             if (post && updateStudentData) {
               const targetStudent = dbData.Users.find(u => u.id === post.studentId);
               if (targetStudent) {
-                updateStudentData(post.studentId, { exp: Math.max(0, Number(targetStudent.exp || 0) - 10) }, '마음 일기 삭제');
+                updateStudentData(post.studentId, u => ({ exp: Math.max(0, Number(u.exp || 0) - 10) }), '마음 일기 삭제');
               }
             }
             
@@ -3138,10 +3139,7 @@
           if (expReward > 0 || moneyReward > 0) {
             const student = students.find(s => s.id === letter.senderId);
             if (student && updateStudentData) {
-              updateStudentData(letter.senderId, {
-                exp: Number(student.exp || 0) + expReward,
-                money: Number(student.money || 0) + moneyReward
-              }, '칭찬 샤워 보상');
+              updateStudentData(letter.senderId, u => ({ exp: Number(u.exp || 0) + expReward, money: Number(u.money || 0) + moneyReward }), '칭찬 샤워 보상');
             }
           }
           
@@ -3723,13 +3721,13 @@
           if (!student) return;
           const newExp = Number(student.exp || 0) - 20;
           const newMoney = Number(student.money || 0) - 10;
-          updateStudentData(studentId, { exp: newExp, money: newMoney, penaltyAlert: true }, '독서록 비승인/삭제');
+          updateStudentData(studentId, u => ({ exp: Math.max(0, Number(u.exp || 0) - 20), money: Math.max(0, Number(u.money || 0) - 10), penaltyAlert: true }), '독서록 비승인/삭제');
         };
 
         const handleApproveLog = (log) => {
           const student = dbData.Users.find(u => u.id === log.studentId);
           if (student) {
-            updateStudentData(log.studentId, { exp: Number(student.exp || 0) + 20, money: Number(student.money || 0) + 10 }, '독서록 승인');
+            updateStudentData(log.studentId, u => ({ exp: Number(u.exp || 0) + 20, money: Number(u.money || 0) + 10 }), '독서록 승인');
           }
           const updatedLog = { ...log, status: 'approved' };
           setDbData(prev => ({ ...prev, ReadingLogs: prev.ReadingLogs.map(l => l.id === log.id ? updatedLog : l) }));
@@ -3759,7 +3757,7 @@
           
           const student = dbData.Users.find(u => u.id === comment.studentId);
           if (student) {
-            updateStudentData(comment.studentId, { exp: Number(student.exp || 0) + 5, money: Number(student.money || 0) + 3 }, '독서록 댓글 승인');
+            updateStudentData(comment.studentId, u => ({ exp: Number(u.exp || 0) + 5, money: Number(u.money || 0) + 3 }), '독서록 댓글 승인');
           }
           
           const updatedComments = log.comments.map(c => c.id === commentId ? { ...c, status: 'approved' } : c);
@@ -3858,6 +3856,9 @@
     </script>
   </body>
 </html>
+
+
+
 
 
 
