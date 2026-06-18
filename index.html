@@ -119,6 +119,78 @@
           setTimeout(() => setToastMsg(''), 3000);
         };
 
+        const safeParseArray = (val) => {
+          if (!val) return [];
+          if (typeof val === 'number') return [val]; 
+          if (typeof val === 'string') {
+            try { 
+              const parsed = JSON.parse(val); 
+              return Array.isArray(parsed) ? parsed : [];
+            } catch(e) { return []; }
+          }
+          if (Array.isArray(val)) return val;
+          return [];
+        };
+
+        const safeParseTitleArray = (val) => {
+          if (!val) return [];
+          if (Array.isArray(val)) return val;
+          if (typeof val === 'string') {
+            if (val.startsWith('[') && val.endsWith(']')) {
+              try { return JSON.parse(val); } catch(e) { return [val]; }
+            }
+            return [val];
+          }
+          return [];
+        };
+
+        const processServerData = (data) => {
+          const parsedUsers = (Array.isArray(data.Users) ? data.Users : []).map(u => ({
+            ...u,
+            title: safeParseTitleArray(u.title),
+            role: u.name === '윤은철' ? 'teacher' : 'student',
+            ownedItems: safeParseArray(u.ownedItems),
+            equippedItems: safeParseArray(u.equippedItems),
+            ownedTitles: safeParseArray(u.ownedTitles),
+            intro: safeText(u.intro),
+            faceUrl: safeText(u.faceUrl), 
+            imoduId: safeText(u.imoduId), 
+            imoduPwd: safeText(u.imoduPwd),
+            job: safeText(u.job)
+          }));
+
+          const parsedTasks = (Array.isArray(data.Tasks) ? data.Tasks : []).map(t => ({
+            ...t,
+            submittedUsers: safeParseArray(t.submittedUsers),
+            approvedUsers: safeParseArray(t.approvedUsers)
+          }));
+          
+          const parsedEmotions = (Array.isArray(data.Emotions) ? data.Emotions : []).map(e => ({
+            ...e,
+            likes: safeParseArray(e.likes),
+            aiReply: safeText(e.aiReply)
+          }));
+
+          return {
+            ...data,
+            Users: parsedUsers,
+            Announcements: Array.isArray(data.Announcements) ? data.Announcements : [],
+            ShopItems: Array.isArray(data.ShopItems) ? data.ShopItems : [],
+            PendingItems: Array.isArray(data.PendingItems) ? data.PendingItems : [],
+            Emotions: parsedEmotions,
+            HallOfFame: Array.isArray(data.HallOfFame) ? data.HallOfFame : [],
+            Tasks: parsedTasks,
+            Jobs: Array.isArray(data.Jobs) ? data.Jobs : [],
+            PurchaseLogs: Array.isArray(data.PurchaseLogs) ? data.PurchaseLogs : [],
+            RewardLogs: Array.isArray(data.RewardLogs) ? data.RewardLogs : [],
+            Records: Array.isArray(data.Records) ? data.Records : [],
+            RecordCategories: Array.isArray(data.RecordCategories) ? data.RecordCategories : [],
+            Letters: Array.isArray(data.Letters) ? data.Letters.map(l => ({ ...l, likes: safeParseArray(l.likes) })) : [],
+            ComplimentTargets: Array.isArray(data.ComplimentTargets) ? data.ComplimentTargets : [],
+            ReadingLogs: Array.isArray(data.ReadingLogs) ? data.ReadingLogs.map(l => ({ ...l, likes: safeParseArray(l.likes), comments: safeParseArray(l.comments) })) : []
+          };
+        };
+
         const fetchData = async () => {
           setLoading(true);
           try {
@@ -130,85 +202,17 @@
             
             if (missingSheets.length > 0) {
               setMissingDbSheets(missingSheets);
-              showToast(`⚠️ 시트 누락: [ ${missingSheets.join(', ')} ]`);
+              showToast(`누락된 시트 발견: [ ${missingSheets.join(', ')} ]`);
             } else {
               setMissingDbSheets([]);
             }
 
-            const safeParseArray = (val) => {
-              if (!val) return [];
-              if (typeof val === 'number') return [val]; 
-              if (typeof val === 'string') {
-                try { 
-                  const parsed = JSON.parse(val); 
-                  return Array.isArray(parsed) ? parsed : [];
-                } catch(e) { return []; }
-              }
-              if (Array.isArray(val)) return val;
-              return [];
-            };
-
-            const safeParseTitleArray = (val) => {
-              if (!val) return [];
-              if (Array.isArray(val)) return val;
-              if (typeof val === 'string') {
-                if (val.startsWith('[') && val.endsWith(']')) {
-                  try { return JSON.parse(val); } catch(e) { return [val]; }
-                }
-                return [val];
-              }
-              return [];
-            };
-
-            const parsedUsers = (Array.isArray(data.Users) ? data.Users : []).map(u => ({
-              ...u,
-              title: safeParseTitleArray(u.title),
-              role: u.name === '윤은철' ? 'teacher' : 'student',
-              ownedItems: safeParseArray(u.ownedItems),
-              equippedItems: safeParseArray(u.equippedItems),
-              ownedTitles: safeParseArray(u.ownedTitles),
-              intro: safeText(u.intro),
-              faceUrl: safeText(u.faceUrl), 
-              imoduId: safeText(u.imoduId), 
-              imoduPwd: safeText(u.imoduPwd),
-              job: safeText(u.job)
-            }));
-
-            const parsedTasks = (Array.isArray(data.Tasks) ? data.Tasks : []).map(t => ({
-              ...t,
-              submittedUsers: safeParseArray(t.submittedUsers),
-              approvedUsers: safeParseArray(t.approvedUsers)
-            }));
-            
-            const parsedEmotions = (Array.isArray(data.Emotions) ? data.Emotions : []).map(e => ({
-              ...e,
-              likes: safeParseArray(e.likes),
-              aiReply: safeText(e.aiReply)
-            }));
-
-            setDbData({
-              ...data,
-              Users: parsedUsers,
-              Announcements: Array.isArray(data.Announcements) ? data.Announcements : [],
-              ShopItems: Array.isArray(data.ShopItems) ? data.ShopItems : [],
-              PendingItems: Array.isArray(data.PendingItems) ? data.PendingItems : [],
-              Emotions: parsedEmotions,
-              HallOfFame: Array.isArray(data.HallOfFame) ? data.HallOfFame : [],
-              Tasks: parsedTasks,
-              Jobs: Array.isArray(data.Jobs) ? data.Jobs : [],
-              PurchaseLogs: Array.isArray(data.PurchaseLogs) ? data.PurchaseLogs : [],
-              RewardLogs: Array.isArray(data.RewardLogs) ? data.RewardLogs : [],
-              Records: Array.isArray(data.Records) ? data.Records : [],
-              RecordCategories: Array.isArray(data.RecordCategories) ? data.RecordCategories : [],
-              Letters: Array.isArray(data.Letters) ? data.Letters.map(l => ({ ...l, likes: safeParseArray(l.likes) })) : [],
-              ComplimentTargets: Array.isArray(data.ComplimentTargets) ? data.ComplimentTargets : [],
-              ReadingLogs: Array.isArray(data.ReadingLogs) ? data.ReadingLogs.map(l => ({ ...l, likes: safeParseArray(l.likes), comments: safeParseArray(l.comments) })) : []
-            });
+            setDbData(processServerData(data));
           } catch (error) {
             console.error("Data Fetch Error:", error);
             if (error.message.includes("Failed to fetch") || error.name === "TypeError") {
-              setMissingDbSheets(["(앱스스크립트 연결 문제)"]);
-              showToast("🚨 SCRIPT_URL 문제이거나 앱스스크립트에 새 버전이 배포되지 않았습니다.");
+              setMissingDbSheets(["(앱스크립트 연결 오류)"]);
+              showToast("에러: SCRIPT_URL 문제이거나 앱스크립트 권한 설정이 필요합니다.");
             } else {
               showToast("데이터를 불러오는데 실패했습니다.");
             }
@@ -222,10 +226,11 @@
         const pollData = async () => {
           try {
             const res = await fetch(SCRIPT_URL);
-            const data = await res.json();
-            setDbData(prev => ({ ...prev, ...data }));
+            const rawData = await res.json();
+            const parsedData = processServerData(rawData);
+            setDbData(prev => ({ ...prev, ...parsedData }));
             if (currentUser && currentUser.id !== 'parent') {
-              const updatedMe = data.Users?.find(u => u.id === currentUser.id);
+              const updatedMe = parsedData.Users?.find(u => u.id === currentUser.id);
               if (updatedMe) {
                 setCurrentUser(updatedMe);
                 localStorage.setItem('padoUser', JSON.stringify(updatedMe));
@@ -3870,6 +3875,7 @@
     </script>
   </body>
 </html>
+
 
 
 
