@@ -399,12 +399,26 @@
                   })
                 });
               }
-             syncToServer('RewardLogs', 'INSERT', null, log);
-          }
-          setSyncing(false);
-          showToast(`전체 학생에게 ${type === 'money' ? '용돈' : '경험치'} 지급이 완료되었습니다!`);
-        };
+            }
 
+            // 전체 데이터 갱신 및 내 상태 병합
+            const newDbData = { ...latestData, Users: newUsers, RewardLogs: [...newLogs, ...(latestData.RewardLogs||[])] };
+            setDbData(newDbData);
+            if (currentUser && currentUser.id !== 'parent') {
+              const updatedMe = newUsers.find(u => u.id === currentUser.id);
+              if (updatedMe) {
+                setCurrentUser(updatedMe);
+                localStorage.setItem('padoUser', JSON.stringify(updatedMe));
+              }
+            }
+            if(typeof showToast === 'function') showToast(선택 학생  지급 완료!);
+          } catch (error) {
+            console.error("Batch Sync Error:", error);
+            if(typeof showToast === 'function') showToast("일괄 처리 중 오류가 발생했습니다.");
+          } finally {
+            setSyncing(false);
+          }
+        };
         if (loading) {
           return (
             <div className="min-h-screen bg-[#FFFDF8] flex flex-col items-center justify-center space-y-4">
