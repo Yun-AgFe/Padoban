@@ -148,7 +148,7 @@
           const parsedUsers = (Array.isArray(data.Users) ? data.Users : []).map(u => ({
             ...u,
             title: safeParseTitleArray(u.title),
-            role: u.name === '윤은철' ? 'teacher' : 'student',
+            role: (u.name === '윤은철' || u.name === '선생님' || String(u.title).includes('선생님')) ? 'teacher' : 'student',
             ownedItems: safeParseArray(u.ownedItems),
             equippedItems: safeParseArray(u.equippedItems),
             ownedTitles: safeParseArray(u.ownedTitles),
@@ -3875,6 +3875,7 @@
     </script>
   </body>
 </html>
+
 
 
 
