@@ -292,7 +292,6 @@
             const latestStudent = parsedData.Users?.find(u => u.id === studentId) || dbData.Users.find(u => u.id === studentId);
             
             if (!latestStudent) return;
-            setDbData(prev => ({ ...prev, ...parsedData }));
             
             const updates = typeof updaterOrUpdates === 'function' ? updaterOrUpdates(latestStudent) : updaterOrUpdates;
             const updatedStudent = { ...latestStudent, ...updates };
@@ -334,6 +333,22 @@
             if (updates.pwd !== undefined) dataToSync.pwd = updates.pwd;
             
             await syncToServer('Users', 'UPDATE', studentId, dataToSync);
+
+            const expDelta = Number(updatedStudent.exp || 0) - Number(latestStudent.exp || 0);
+            const moneyDelta = Number(updatedStudent.money || 0) - Number(latestStudent.money || 0);
+            if (expDelta !== 0 || moneyDelta !== 0) {
+              const newLog = {
+                id: Date.now().toString(),
+                studentId,
+                studentName: updatedStudent.name,
+                expDelta,
+                moneyDelta,
+                reason: reason,
+                date: new Date().toISOString().split('T')[0]
+              };
+              setDbData(prev => ({ ...prev, RewardLogs: [newLog, ...(prev.RewardLogs || [])] }));
+              syncToServer('RewardLogs', 'INSERT', null, newLog);
+            }
           } catch (e) {
             console.error('Update failed:', e);
             showToast('데이터 저장 중 오류가 발생했습니다.');
